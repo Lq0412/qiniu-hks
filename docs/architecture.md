@@ -1,6 +1,6 @@
 # 谁是人类 · 架构
 
-这一步交付服务端纯逻辑和文字模式。旧版「你是什么人类模型？」仍是 `npm start` 的默认真玩入口。新对局不打开灵矽、不申请麦克风。语音调度的约束按 [ADR-005 #14](https://github.com/Lq0412/qiniu-hks/issues/14) 的真机探针写在下面；换音色、预合成和连接改写留给后面的语音调度 PR，本步不实现。
+服务端纯逻辑和文字局网页都在这里。旧版「你是什么人类模型？」仍是 `npm start` 的默认真玩入口。新对局打开 `/mixin`，不打开灵矽、不申请麦克风。语音调度的约束按 [ADR-005 #14](https://github.com/Lq0412/qiniu-hks/issues/14) 的真机探针写在下面；换音色、预合成和连接改写留给后面的语音调度 PR，这一步不实现。
 
 ## 模块
 
@@ -15,9 +15,10 @@
 | `mixin-endings.mjs` | 揭晓口播。按胜负从定稿模板抽一条，填人味分、投票者和玩家原话。不调用模型。 |
 | `mixin-session.mjs` | 文字会话。`playScript` / `runUntilResult` 跑完整局。`restart` 只在结局阶段重开。 |
 | `mixin-http.mjs` | `/api/mixin`。和旧的 `/api/game`、`/voice` 分开，cookie 用 `mixin`。 |
+| `public/mixin/` | 文字局页面。原生 HTML/CSS/JS，不构建。`audio.js` 把播放和录音留给语音调度。 |
 | `scripts/sim-mixin.mjs` | `npm run sim`。打印阶段、票型和结局字段。 |
 
-`server.mjs` 只多挂了文字入口：请求体上限 4096 字节，`/api/mixin/:id` 要求 cookie `mixin` 与路径里的 id 相同。`linx.mjs`、`game.mjs`、`scoring.mjs`、`benchmark.mjs` 和 `public/` 这一步不改行为。
+`server.mjs` 只多挂了文字入口：请求体上限 4096 字节，`/api/mixin/:id` 要求 cookie `mixin` 与路径里的 id 相同。`linx.mjs`、`game.mjs`、`scoring.mjs`、`benchmark.mjs` 不改行为。`public/` 里旧测评页不变；`public/mixin/` 是新的文字局页面。
 
 ## 数据流
 
@@ -155,6 +156,34 @@ HTTP 建局只接受 `demo`、`difficulty`、`seed`、`sceneId`、`cardIds`、`r
 
 代号是内容选择，不是架构决策。演示局锁定「碳基-7B」。其它局从「碳基-7B / 打工人-Turbo / 摸鱼-mini / 熬夜-Pro」里抽。没传种子时种子是 1，抽签可复现。调用方也可以直接指定 `alias`，规则见上面的白名单。
 
+## 前端
+
+文字局页面在 `public/mixin/`，没有框架，也没有构建。`server.mjs` 把 `/mixin`、`/mixin/` 和页面资源原样送出去。旧测评仍在 `/`。
+
+| 文件 | 职责 |
+| --- | --- |
+| `public/mixin/index.html` | 页面 |
+| `public/mixin/app.js` | 渲染、倒计时、调用顺序 |
+| `public/mixin/logic.js` | 纯函数：建局参数、公开视图裁剪、座位、字幕、推进意图、分享卡绘制 |
+| `public/mixin/audio.js` | 播放、停止、思考音、按住说话。文字模式是空实现，不调用 `getUserMedia` |
+| `public/mixin/style.css` | 深色牌桌 |
+
+打开 http://127.0.0.1:4173/mixin 。选场景和难度，输入或随机一个化名，开始。请求是 `POST /api/mixin` 再 `POST /api/mixin/:id/start`。局 id 用创建响应里的 `id`，不是 `game.id`。cookie `mixin` 由浏览器保存。
+
+推进由页面驱动，服务端没有自己的挂钟：
+
+- 有 `cue`：先显示「思考中…」，调用 `playThinking()`，再 `POST .../step`。刚说完的一句会先停一停，长开场白停得更久。
+- 没有 `cue`：大约每秒 `POST .../tick`，正文是 `{ ms: 1000 }`。客户端自己记时钟，刷新后从 `sessionStorage` 读回来。
+- `round_player`：`text`（`typed: true`）再 `confirm`。可以 `hint`。8 秒后的示例只用服务端返回的 `example`。
+- `accuse`：可以 `interrupt`。
+- `defense` / 还没锁票的 `vote`：`vote`，座位是 1–4。
+- 念票时只渲染公开视图里已经出现的 `votes`。揭晓前不补全没念出来的票。
+- `reveal` 或 `result`：展示 `report` 里的口播、人味分、称号和被抓住的那句。再来一局是 `restart` 再 `start`。分享卡用 canvas 画 PNG，没有二维码。
+
+揭晓前 `sanitizeView` 会丢掉 `humanScore`、`aiScore`、`script`、`report`、`outcome`，也不会把 `examplePlayer`、舞台指令、`fallbackText` 放进界面状态。`sessionStorage` 只存局 id 和时钟。409（cookie 对不上或规则拒绝）和 403（不是本机）用 `friendlyError` 提示。断线或刷新后用原来的 cookie 再 `GET /api/mixin/:id`。
+
+如果 step 响应里带了字符串 `audioUrl` 或 `clip.url`，页面会 `await play(url, { seat, roleId, voiceId })`。文字模式没有这个字段。按住说话按钮已经留好，调用 `startHoldToTalk` / `stopHoldToTalk`。语音调度只替换 `audio.js` 的函数体。
+
 ## 怎么跑
 
 ```bash
@@ -189,5 +218,5 @@ npm run sim -- --difficulty hell --seed 3
 - 语音调度按上面的 #14 约束实现换音色、热身回合、思考音效，以及群主固定台词的预合成。TTS 缓存在那一步使用。
 - 指控改成服务端套好的「【台词】」，保证原话逐字。按票型生成指控剧本，也留在那一步。
 - 服务端挂钟留到真语音。这一步继续由客户端调用 `tick`。
-- 前端放到后续分支，接 `/api/mixin` 或同一条灵矽连接，文字模式继续作为没有麦克风时的退路。
+- 文字局页面已经接上 `/api/mixin`。真语音仍走后面的语音调度，接 `public/mixin/audio.js`。没有麦克风时继续用文字模式。
 - MCP 工具拆分、连接层改写、`[mcp拒绝]` 日志，都留到后面的 PR。
