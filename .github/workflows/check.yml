@@ -25,12 +25,12 @@ jobs:
             echo ''
             echo '### 全量测试与覆盖率（npm run test:coverage，行覆盖门禁 ≥80%）'
             echo '```'
-            sed -n '/^# tests/,/^# end of coverage report/p' coverage.txt
+            sed -n -E '/tests +[0-9]+$/,/end of coverage report/p' coverage.txt
             echo '```'
             echo ''
             echo '### game.mjs 分支覆盖门禁（npm run test:rules，≥90%）'
             echo '```'
-            sed -n '/^# tests/,/^# end of coverage report/p' rules.txt
+            sed -n -E '/tests +[0-9]+$/,/end of coverage report/p' rules.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload test logs
