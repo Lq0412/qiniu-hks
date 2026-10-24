@@ -541,8 +541,7 @@ function paintSeats() {
   const html = seats.map(seat => `<article class="seat role-${esc(seat.roleId)} ${seat.speaking ? 'speaking' : ''} ${seat.you ? 'you' : ''}" ${seat.speaking ? 'aria-current="true"' : ''}>
     <span class="seat-no">${seat.you ? '05 你' : `0${seat.seat}`}</span>
     <strong>${esc(seat.name)}</strong>
-    <em>${seat.speaking ? (state.thinking ? '正在思考' : '正在发言') : seat.you ? '装成模型' : '模型'}</em>
-    ${seat.speaking ? '<span class="soundwave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>' : ''}
+    <em>${seat.you ? '装成模型' : '模型'}</em>
   </article>`).join('');
   if (el.dataset.html !== html) {
     el.dataset.html = html;
