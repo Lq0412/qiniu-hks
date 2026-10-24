@@ -24,9 +24,9 @@ export const VOICE_CATALOG = {
     label: '沉稳质感男',
   },
   shensi: {
-    voiceId: '9d91653b2adf4aa9ad97e1c8f63fbda3', // 磁性低音男
-    fallbackVoiceId: 'b38d4a6eb8f64c209fa6febfd7f91663', // 深夜播客
-    label: '磁性低音男',
+    voiceId: 'b38d4a6eb8f64c209fa6febfd7f91663', // 深夜播客
+    fallbackVoiceId: null,
+    label: '深夜播客',
   },
   baobao: {
     voiceId: '1965294143278125057', // 调皮公主
