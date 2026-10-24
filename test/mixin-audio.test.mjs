@@ -19,10 +19,13 @@ test('wav and mxop round-trip, and presynth names stay stable', async () => {
   assert.ok(decoded.pcm.some(byte => byte !== 0));
   const ids = presynthCatalog().map(item => item.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.deepEqual(ids, [
+  assert.deepEqual(ids.slice(0, 11), [
     'host-open-annual-demo', 'host-rules', 'host-wrap-1', 'host-wrap-2', 'host-nudge',
     'host-reveal-bridge', 'host-skip-player', 'host-skip-1', 'host-skip-2', 'host-skip-3', 'host-skip-4',
   ]);
+  assert.equal(ids.filter(id => /^host-open-.*-\d$/.test(id)).length, 12);
+  assert.equal(ids.filter(id => id.startsWith('host-card-')).length, 36);
+  assert.ok(presynthCatalog().every(item => item.text.trim()));
   const entry = ttsManifestEntry(presynthCatalog()[1], 'voice-host');
   assert.equal(entry.file, 'host-rules.mxop');
   assert.equal(entry.text.includes('规则很简单'), true);

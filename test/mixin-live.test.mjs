@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
+import { wavFromPcm } from '../mixin-audio.mjs';
 import { createAudioLane } from '../mixin-lane.mjs';
 import { createMixinLink } from '../mixin-link.mjs';
 import { createVoiceSession } from '../mixin-live.mjs';
@@ -61,7 +62,7 @@ function installFake({ hangAccuse = false, failReconnect = false, stallDetects =
           socket.close();
           return;
         }
-        const accuse = hangAccuse && !fake.armed && message.text.includes('【台词】') && message.text.includes('「');
+        const accuse = hangAccuse && !fake.armed && message.text.includes('【台词】') && message.text.includes('「') && !message.text.includes('局势：预合成。');
         if (accuse) {
           fake.armed = true;
           fake.hanging = true;
@@ -570,3 +571,28 @@ test('即兴 answer 在 shiftCue 定稿后预取，step 使用相同 instruction
     assert.fail('没有走到带已发言上下文的即兴句');
   } finally { f.session.tick(1_000_000); f.link.close(); }
 });
+
+for (const missing of [false, true]) {
+  test(`出题两段预合成${missing ? '缺段走实时' : '命中不发 detect'}`, async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'card-assets-'));
+    const f = await liveFixture(undefined, { audioDir: dir });
+    try {
+      const cue = f.session.game.cue;
+      Object.assign(cue, { kind: 'host_card', card: '测试题。', nextName: '柯老师',
+        line: '第1题：测试题。请柯老师先来。', fallbackText: '第1题：测试题。请柯老师先来。',
+        instruction: '【台词】第1题：测试题。请柯老师先来。' });
+      const lines = ['第1题：测试题。', '请柯老师先来。'].slice(0, missing ? 1 : 2).map((text, i) => ({
+        id: `part-${i}`, text, voiceId: cue.voice.voiceId, file: `part-${i}.wav`, kind: 'tts',
+      }));
+      for (const item of lines) await writeFile(path.join(dir, item.file), wavFromPcm(Buffer.alloc(640, 3)));
+      await writeFile(path.join(dir, 'manifest.json'), JSON.stringify({ lines }));
+      const count = f.fake.detects.length;
+      const result = await f.session.step();
+      if (missing) assert.equal(f.fake.detects[count].text, cue.instruction);
+      else {
+        assert.ok(!f.fake.detects.slice(count).some(item => item.text === cue.instruction));
+        assert.deepEqual(result.clipWav.subarray(44), Buffer.concat([Buffer.alloc(640, 3), Buffer.alloc(4800), Buffer.alloc(640, 3)]));
+      }
+    } finally { f.session.tick(1_000_000); f.link.close(); await rm(dir, { recursive: true, force: true }); }
+  });
+}

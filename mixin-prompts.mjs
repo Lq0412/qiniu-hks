@@ -1,3 +1,6 @@
+import { SCENES, allCards } from './mixin-bank.mjs';
+import { PLAYER_ALIASES, ROLES } from './mixin-roles.mjs';
+
 // 提示词、{{counter_brief}} 和发给模型的 detect 文本。纯函数。
 // hello 只替换 {{counter_brief}}。listen.detect 不再带 custom_replace_prompt，也不走 MCP。
 // 台词轮和即兴轮的句式与队长 v3 复测一致。指控、念票、群主播报都由服务端写成【台词】。
@@ -97,6 +100,13 @@ export function presynthCatalog() {
     { id: 'host-skip-2', roleId: 'host', text: skipSeatLine(2) },
     { id: 'host-skip-3', roleId: 'host', text: skipSeatLine(3) },
     { id: 'host-skip-4', roleId: 'host', text: skipSeatLine(4) },
+    ...SCENES.flatMap(scene => PLAYER_ALIASES.map((alias, index) => ({
+      id: `host-open-${scene.id}-${index}`, roleId: 'host', text: openingLine(scene.name, alias),
+    }))),
+    ...allCards().flatMap(card => [1, 2].map(round => ({
+      id: `host-card-${card.id}-${round}`, roleId: 'host', text: `第${round}题：${card.prompt}`,
+    }))),
+    ...ROLES.map(role => ({ id: `host-first-${role.id}`, roleId: 'host', text: `请${role.name}先来。` })),
   ];
 }
 

@@ -92,9 +92,19 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
     }
   }
 
-  async function speakLive({ text, voiceId, line, allowAsset, limitMs = timeoutMs, valid }) {
+  async function speakLive({ text, voiceId, line, allowAsset, limitMs = timeoutMs, valid, cue }) {
     if (allowAsset && audioDir) {
-      const pcm = await (await loadAssets(audioDir)).find({ voiceId, text: line });
+      const assets = await loadAssets(audioDir);
+      let pcm = await assets.find({ voiceId, text: line });
+      // 只拆完整出题句；被 90 字截断的台词保持实时合成。
+      if (!pcm?.length && cue?.kind === 'host_card') {
+        const parts = /^(第[12]题：.*)(请.+先来。)$/.exec(line);
+        if (parts && line === `${parts[1]}请${cue.nextName}先来。` && parts[1].endsWith(cue.card)) {
+          const first = await assets.find({ voiceId, text: parts[1] });
+          const next = await assets.find({ voiceId, text: parts[2] });
+          if (first?.length && next?.length) pcm = Buffer.concat([first, Buffer.alloc(4800), next]);
+        }
+      }
       if (pcm?.length) return { pcm, spoken: line, voiceId, via: 'presynth', aborted: false };
     }
     try {
@@ -148,6 +158,7 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
       voiceId,
       line: scripted ? (cue.line || cue.fallbackText) : cue.fallbackText,
       allowAsset: scripted,
+      cue,
       valid,
     });
     if (!valid() || game.cue?.cueId !== cue.cueId) return { aborted: true, pcm: null, text: cue.line || cue.fallbackText, reveal: false };

@@ -6,7 +6,7 @@
 //   npm run presynth
 // 输出：public/mixin/audio/<稳定文件名>.mxop 和 manifest.json
 
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile as readDisk, access } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -64,7 +64,11 @@ export async function runPresynth({
     log(`凭据来源：${loaded.source}`);
     link = createLink(loaded);
   }
-  const lines = [];
+  let previous = [];
+  try { previous = JSON.parse(await readDisk(path.join(dir, 'manifest.json'), 'utf8')).lines.filter(item => item.kind === 'tts'); }
+  catch { /* 首次预合成没有清单 */ }
+  const lines = [...previous];
+  const save = () => writeFile(path.join(dir, 'manifest.json'), `${JSON.stringify({ version: 1, lines: [sfxManifestEntry(), ...lines] }, null, 2)}\n`);
   let stopped = false;
   try {
     if (!existingLink) {
@@ -75,6 +79,11 @@ export async function runPresynth({
     await writeFile(path.join(dir, 'reveal-sfx.wav'), revealSfxWav());
     for (const item of catalog) {
       if (shouldStop()) { stopped = true; break; }
+      const old = lines.find(entry => entry.id === item.id && entry.text === item.text && entry.voiceId === voiceId);
+      if (old) {
+        try { await access(path.join(dir, old.file)); continue; }
+        catch { /* 文件丢失则补合成 */ }
+      }
       const result = await withTimeout(
         link.detect({ text: scriptedDetect('群主·零号', item.text, '预合成。'), voiceId }),
         timeoutMs,
@@ -87,7 +96,11 @@ export async function runPresynth({
       if (bytes.length > MAX_FILE_BYTES) throw new Error(`音频过大：${item.id} ${bytes.length} 字节`);
       const entry = ttsManifestEntry(item, voiceId);
       await writeFile(path.join(dir, entry.file), bytes);
-      lines.push(entry);
+      const index = lines.findIndex(old => old.id === entry.id);
+      if (index >= 0) lines[index] = entry;
+      else lines.push(entry);
+      // 每句写入清单，后续超时或被对局打断也保留已有成果。
+      await save();
       log(`${entry.file}  bytes=${bytes.length}  pcm=${result.pcm.length}`);
     }
   } finally {
