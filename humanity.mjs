@@ -123,6 +123,7 @@ function canonTime(hour, minute) {
 }
 
 // 只归整「带分钟」的时刻，避免把「有一点」收成钟点。7:30、七点半、七点三十、七点三十分视为同一个词。
+// 「七点三」这种点后单个中文数字收成整十；「七点零三」和「十二点五分」仍是精确分钟。
 // 前一位已经是数字时不再起一个时刻，避免「99点半」从第二位收成「9:30」。
 function parseTimeAt(text, index) {
   if (text[index - 1] === '第' || isDigit(text[index - 1])) return null;
@@ -140,11 +141,23 @@ function parseTimeAt(text, index) {
     if (!rendered) return null;
     return { text: rendered, end: mark + 1 };
   }
+  // 「零三」是精确分钟；单独一个中文数字且后面不是「分」时按十分钟计，「七点三」是 7:30。
+  if ((text[mark] === '零' || text[mark] === '〇') && CN_DIGIT[text[mark + 1]] != null) {
+    let end = mark + 2;
+    if (text[end] === '分') end += 1;
+    const rendered = canonTime(hour.value, CN_DIGIT[text[mark + 1]]);
+    if (!rendered) return null;
+    return { text: rendered, end };
+  }
   const minute = parseClockNumber(text, mark);
   if (!minute) return null;
+  const token = text.slice(mark, minute.end);
+  const exact = text[minute.end] === '分';
+  const colloquial = token.length === 1 && (CN_DIGIT[token] ?? 0) >= 1 && !exact;
+  const minuteValue = colloquial ? minute.value * 10 : minute.value;
   let end = minute.end;
-  if (text[end] === '分') end += 1;
-  const rendered = canonTime(hour.value, minute.value);
+  if (exact) end += 1;
+  const rendered = canonTime(hour.value, minuteValue);
   if (!rendered) return null;
   return { text: rendered, end };
 }

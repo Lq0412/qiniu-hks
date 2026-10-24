@@ -157,6 +157,15 @@ test('ASR punctuation, clocks and numeral variants match the same keyword', () =
   assert.equal(normalizeForMatch('7点30分'), '7:30');
   assert.equal(normalizeForMatch('两点半'), '2:30');
   assert.equal(normalizeForMatch('十二点五分'), '12:05');
+  assert.equal(normalizeForMatch('七点三'), '7:30');
+  assert.equal(normalizeForMatch('三点五'), '3:50');
+  assert.equal(normalizeForMatch('七点零三'), '7:03');
+  assert.equal(normalizeForMatch('七点〇三'), '7:03');
+  assert.equal(normalizeForMatch('七点零三分'), '7:03');
+  assert.equal(normalizeForMatch('7点3'), '7:03');
+  assert.equal(normalizeForMatch('七点六'), '七点六');
+  assert.equal(normalizeForMatch('25点零三'), '25点零三');
+  assert.equal(normalizeForMatch('七点零'), '7:00');
   assert.equal(normalizeForMatch('二十三点十五分'), '23:15');
   assert.equal(normalizeForMatch('十点半'), '10:30');
   assert.equal(normalizeForMatch('99点半'), '99点半');
