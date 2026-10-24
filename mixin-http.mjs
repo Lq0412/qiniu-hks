@@ -35,7 +35,7 @@ export function createMixinHub({ now = Date.now, ttlMs = SESSION_TTL_MS, createS
         if (action === 'start') return done(session, await session.start(), match[1]);
         if (action === 'text') return done(session, session.say(body.text, body), match[1]);
         if (action === 'confirm') return done(session, session.confirm(body.revision), match[1]);
-        if (action === 'vote') return done(session, session.vote(body.seat), match[1]);
+        if (action === 'vote') return done(session, session.vote(body.skip === true ? null : body.seat), match[1]);
         if (action === 'interrupt') return done(session, session.interrupt(body.text), match[1]);
         if (action === 'hint') return done(session, session.hint(), match[1]);
         if (action === 'step') return done(session, await session.step(), match[1]);

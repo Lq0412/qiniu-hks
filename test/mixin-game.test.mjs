@@ -97,7 +97,7 @@ async function reach(session, phase, round) {
 
 test('dealing locks the demo alias and draws the others from the pool', () => {
   const demo = createMixinGame({ demo: true, difficulty: 'hell', seed: 3 });
-  assert.equal(demo.playerAlias, '碳基-7B');
+  assert.equal(demo.playerAlias, '牛小七');
   assert.equal(demo.difficulty, 'normal');
   assert.deepEqual(demo.cards.map(card => card.id), ['A2', 'A1']);
   assert.equal(demo.stage, 'lobby');
@@ -105,7 +105,7 @@ test('dealing locks the demo alias and draws the others from the pool', () => {
   for (let seed = 1; seed <= 12; seed += 1) {
     names.add(createMixinGame({ seed, sceneId: 'annual', cardIds: ['A2', 'A1'], roleIds: ['claudia', 'astra', 'shensi', 'baobao'] }).playerAlias);
   }
-  assert.ok(names.size > 1);
+  assert.deepEqual([...names], ['牛小七']);
   for (const name of names) assert.ok(PLAYER_ALIASES.includes(name));
   assert.equal(createMixinGame({ seed: 2, sceneId: 'dating', alias: '熬夜-Pro' }).playerAlias, '熬夜-Pro');
   assert.equal(createMixinGame({ seed: 2, sceneId: 'dating' }).scene.id, 'dating');
@@ -484,7 +484,7 @@ test('report copy is checked verbatim and a new deal invalidates the old generat
   assert.equal(session.game.id, id);
   assert.equal(session.game.generation, generation + 1);
   assert.equal(session.game.phase, 'lobby');
-  assert.equal(session.game.playerAlias, '碳基-7B');
+  assert.equal(session.game.playerAlias, '牛小七');
   assert.throws(() => submitPlayerText(session.game, { generation, text: '旧连接还在说', now: 0 }), /旧连接/);
   assert.equal(viewMixin(session.game).outcome, null);
 });
@@ -583,4 +583,24 @@ test('player countdown copy matches the actual twenty-second deadline', async ()
   const seconds = (game.deadlineAt - session.now()) / 1000;
   assert.equal(seconds, 20);
   assert.equal(game.note, `轮到你了，${seconds} 秒。`);
+});
+
+test('explicit abstention is accepted in defense and locks on entering vote', () => {
+  const game = createMixinGame({ demo: true });
+  game.phase = 'defense';
+  const result = castVote(game, { generation: game.generation, seat: null });
+  assert.equal(result.accepted, true);
+  assert.equal(viewMixin(game).playerAbstained, true);
+  assert.equal(game.playerVote, null);
+});
+
+test('settlement exposes humanity details and long catchphrases keep the vote audible', async () => {
+  const session = demoSession();
+  const game = await drive(session);
+  assert.ok(Array.isArray(game.human.breakdown));
+  assert.equal(game.human.breakdown.reduce((sum, item) => sum + item.delta, 0), game.humanScore);
+  for (const row of session.game.lines.filter(row => row.kind === 'vote')) {
+    const vote = session.game.votePlan.votes.find(vote => vote.seat === row.seat);
+    assert.match(row.text, vote.targetSeat === null ? /弃权/ : new RegExp('我投' + vote.targetSeat + '号'));
+  }
 });

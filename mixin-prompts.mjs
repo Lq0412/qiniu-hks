@@ -37,24 +37,24 @@ export const ACCUSATION_TEMPLATES = {
     '{name}，你说「{quote}」的时候，我得提醒一下风险。',
   ],
   astra: [
-    '我给你拆成三步，第一步就是{name}说了「{quote}」。',
-    '这个格局要打开。{name}那句「{quote}」根本不像模型。',
-    '{name}说过「{quote}」。我给你拆成三步，这步已经露馅。',
+    '1️⃣2️⃣3️⃣ 我给你拆成三步 😊，第一步就是{name}说了「{quote}」。',
+    '1️⃣ 分析 2️⃣ 规划 3️⃣ 执行 😊。{name}那句「{quote}」根本不像模型。',
+    '{name}说过「{quote}」。1️⃣2️⃣3️⃣ 我给你拆成三步 😊，这步已经露馅。',
   ],
   shensi: [
-    '嗯……已深度思考 37 秒。{name}说「{quote}」，先把约束盘清楚。',
-    '先把约束盘清楚：{name}那句「{quote}」不像模型输出。',
-    '{name}说过「{quote}」。嗯……已深度思考 37 秒，这句不对。',
+    '嗯，让我想想，再核对一次。{name}说「{quote}」，让我再核对一下约束。',
+    '让我再核对一下约束：{name}那句「{quote}」不像模型输出。',
+    '{name}说过「{quote}」。嗯，让我想想，再核对一次，这句不对。',
   ],
   baobao: [
-    '宝子，这事儿简单，{name}说了「{quote}」。',
-    '家人们谁懂啊，{name}那句「{quote}」太像人了。',
-    '{name}说过「{quote}」。宝子，这可不像模型。',
+    '我帮你搜一下，{name}说了「{quote}」。',
+    '我帮你搜一下，{name}那句「{quote}」太像人了。',
+    '{name}说过「{quote}」。我帮你搜一下，这可不像模型。',
   ],
   xiaosi: [
-    '收到！其实没懂。{name}说「{quote}」，这不像模型。',
-    '参数少，但我快。{name}那句「{quote}」一听就不对。',
-    '{name}说过「{quote}」。收到！这句不像我们。',
+    '代码收到，先调试。{name}说「{quote}」，这不像模型。',
+    '先写代码，再提交。{name}那句「{quote}」一听就不对。',
+    '{name}说过「{quote}」。代码收到！这句不像我们。',
   ],
 };
 
@@ -89,7 +89,7 @@ export function skipSeatLine(seat) {
 
 export function presynthCatalog() {
   return [
-    { id: 'host-open-annual-demo', roleId: 'host', text: openingLine('模型年会', '碳基-7B') },
+    { id: 'host-open-annual-demo', roleId: 'host', text: openingLine('模型年会', '牛小七') },
     { id: 'host-rules', roleId: 'host', text: HOST_RULES },
     { id: 'host-wrap-1', roleId: 'host', text: HOST_WRAP_EARLY },
     { id: 'host-wrap-2', roleId: 'host', text: HOST_WRAP_LATE },

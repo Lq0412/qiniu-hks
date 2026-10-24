@@ -89,7 +89,7 @@ test('roles are fictional, keep a voice slot, and can be dealt', () => {
   assert.throws(() => roleById('claude'), /未知角色/);
   const ids = defaultLineup().map(seat => seat.roleId);
   assert.ok(relationshipLines(ids).length >= 3);
-  assert.ok(relationshipLines(['xiaosi', 'baobao', 'astra', 'shensi']).some(line => line.includes('小四')));
+  assert.ok(relationshipLines(['xiaosi', 'baobao', 'astra', 'shensi']).some(line => line.includes('Cursor')));
   assert.deepEqual(relationshipLines(['astra', 'baobao']), []);
 });
 
@@ -125,7 +125,7 @@ test('prompts keep the brief slot and can render every stage direction', () => {
     sceneName: '模型年会',
     background: '年底述职。',
     seats: defaultLineup(),
-    alias: '碳基-7B',
+    alias: '牛小七',
     relationships: [],
     cards: ['算力减半', '最离谱的问题'],
     phase: 'round_ai',
@@ -138,16 +138,16 @@ test('prompts keep the brief slot and can render every stage direction', () => {
   assert.match(brief, /无/);
   assert.match(brief, /不要猜测谁是人类/);
   const spoken = renderBrief({
-    sceneName: '模型年会', background: '年底述职。', seats: defaultLineup(), alias: '碳基-7B',
-    relationships: ['包包嫌柯老师啰嗦'], cards: ['甲', '乙'], phase: 'reveal', round: 2,
+    sceneName: '模型年会', background: '年底述职。', seats: defaultLineup(), alias: '牛小七',
+    relationships: ['Gemini嫌Claude啰嗦'], cards: ['甲', '乙'], phase: 'reveal', round: 2,
     spoken: [{ seat: 1, text: '原话' }], situation: '结果已定',
   });
   assert.match(spoken, /1号-原话/);
-  assert.match(openingLine('模型年会', '碳基-7B'), /碳基-7B/);
-  const cue = { seat: 1, name: '柯老师', personality: '谨慎', sceneName: '模型年会', round: 1, card: '题', nextName: '阿斯哥', spoken: '还没有', target: 5, targetName: '碳基-7B', quote: '原话', tone: '调侃', interrupt: '打断', outcome: '潜伏成功', received: 1, alias: '碳基-7B', line: '固定台词' };
+  assert.match(openingLine('模型年会', '牛小七'), /牛小七/);
+  const cue = { seat: 1, name: 'Claude', personality: '谨慎', sceneName: '模型年会', round: 1, card: '题', nextName: 'GPT', spoken: '还没有', target: 5, targetName: '牛小七', quote: '原话', tone: '调侃', interrupt: '打断', outcome: '潜伏成功', received: 1, alias: '牛小七', line: '固定台词' };
   for (const kind of ['intro', 'answer', 'rebuttal']) {
     const text = stageDirection({ ...cue, kind });
-    assert.match(text, /^角色：柯老师（谨慎）。话题：/);
+    assert.match(text, /^角色：Claude（谨慎）。话题：/);
     assert.match(text, /一句话，20字以内。$/);
     assert.match(text, /（局势：/);
     assert.doesNotMatch(text, /【台词】/);
@@ -163,11 +163,11 @@ test('prompts keep the brief slot and can render every stage direction', () => {
   for (const [roleId, templates] of Object.entries(ACCUSATION_TEMPLATES)) {
     assert.ok(templates.length >= 3, roleId);
     templates.forEach((template, index) => {
-      const line = fillAccusation(template, '碳基-7B', quote);
+      const line = fillAccusation(template, '牛小七', quote);
       assert.equal(line.includes(`「${quote}」`), true, `${roleId}#${index}`);
       assert.equal(line.split(quote).length, 2, `${roleId}#${index}`);
     });
-    const picked = accusationLine({ roleId, targetName: '碳基-7B', quote, random: () => 0 });
+    const picked = accusationLine({ roleId, targetName: '牛小七', quote, random: () => 0 });
     assert.equal(picked.includes(`「${quote}」`), true);
   }
   assert.throws(() => fillAccusation('没有插槽', '五号', quote), /插槽/);
@@ -175,7 +175,7 @@ test('prompts keep the brief slot and can render every stage direction', () => {
   assert.equal(accusationLine({ roleId: 'claudia', targetName: '五号', quote, random: () => Number.NaN }).includes(quote), true);
   assert.equal(toneFor('hell'), '笃定');
   assert.equal(toneFor('missing'), '认真');
-  assert.match(reportInstruction({ outcome: '潜伏成功', votes: '1/4', catcher: '包包', aiScore: 80, playerLines: ['原话'], titles: ['人形 Transformer'] }), /不得更改/);
+  assert.match(reportInstruction({ outcome: '潜伏成功', votes: '1/4', catcher: 'Gemini', aiScore: 80, playerLines: ['原话'], titles: ['人形 Transformer'] }), /不得更改/);
   for (const file of ['mixin-session.mjs', 'mixin-http.mjs', 'mixin-game.mjs', 'humanity.mjs', 'mixin-roles.mjs', 'mixin-prompts.mjs', 'mixin-voice.mjs', 'mixin-endings.mjs', 'scripts/sim-mixin.mjs']) {
     const source = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
     assert.doesNotMatch(source, /getUserMedia|from '\.\/linx\.mjs'|new WebSocket/);
@@ -245,4 +245,26 @@ test('voice scan walk skips device secrets and presynth audio', () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('new display names retain role voices and feed host presynthesis and echo filtering', async () => {
+  const { createMixinGame, isStageEcho, normalizeEcho } = await import('../mixin-game.mjs');
+  const { presynthCatalog } = await import('../mixin-prompts.mjs');
+  const names = { claudia: 'Claude', astra: 'GPT', shensi: 'DeepSeek', xiaosi: 'Cursor', baobao: 'Gemini' };
+  for (const [id, name] of Object.entries(names)) {
+    const role = roleById(id);
+    assert.equal(role.name, name);
+    assert.equal(role.voice.voiceId, VOICE_CATALOG[id].voiceId);
+    assert.equal(role.voice.fallbackVoiceId, VOICE_CATALOG[id].fallbackVoiceId);
+    const text = presynthCatalog().find(item => item.id === 'host-first-' + id).text;
+    assert.equal(text, `请${name}先来。`);
+    const sample = `角色：${name}。【台词】这是用于回声过滤的测试长句。`;
+    assert.equal(isStageEcho(sample, [normalizeEcho(sample)]), true);
+  }
+  assert.equal(createMixinGame({ seed: 20 }).playerAlias, '牛小七');
+  assert.match(roleById('claudia').personality, /免责声明.*长篇/);
+  assert.match(roleById('astra').personality, /1️⃣2️⃣3️⃣.*emoji/);
+  assert.match(roleById('shensi').personality, /嗯，让我想想.*自我核对/);
+  assert.match(roleById('xiaosi').personality, /代码/);
+  assert.match(roleById('baobao').personality, /我帮你搜一下/);
 });

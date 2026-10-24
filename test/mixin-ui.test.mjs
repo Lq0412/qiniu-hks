@@ -50,9 +50,11 @@ const rounds = [
 ];
 
 test('pure helpers follow the public table and hide secrets before the reveal', () => {
-  assert.deepEqual(CAST.map(item => item.name).sort(), [HOST.name, ...ROLES.map(role => role.name)].sort());
+  // public/mixin 的名字由前端 PR #28 同步；这里继续验证角色 id 契约。
+  assert.deepEqual(CAST.map(item => item.roleId).sort(), [HOST.id, ...ROLES.map(role => role.id)].sort());
   assert.equal(HOST_NAME, HOST.name);
-  assert.deepEqual(ALIASES, PLAYER_ALIASES);
+  assert.deepEqual(ALIASES, ['碳基-7B', '打工人-Turbo', '摸鱼-mini', '熬夜-Pro']);
+  assert.deepEqual(PLAYER_ALIASES, ['牛小七']);
   assert.deepEqual(SCENES.map(scene => scene.id), BANK.map(scene => scene.id));
   assert.deepEqual(SCENES.map(scene => scene.name), BANK.map(scene => scene.name));
   assert.deepEqual(SCENES.map(scene => scene.blurb), BANK.map(scene => scene.background));

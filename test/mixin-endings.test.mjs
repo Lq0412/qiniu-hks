@@ -6,7 +6,7 @@ import { scriptedBody, stageDirection } from '../mixin-prompts.mjs';
 import { createMixinGame } from '../mixin-game.mjs';
 import { createTextSession, playScript, runUntilResult } from '../mixin-session.mjs';
 
-const NAMES = ['柯老师', '阿斯哥', '深思哥', '包包'];
+const NAMES = ['Claude', 'GPT', 'DeepSeek', 'Gemini'];
 const MARKERS = ['已超出我们的散热能力', '本群已自动退出群聊', '最像人类', '你加载不了', '合格的机器', '自行回滚', '反向满分', '低于检测阈值', '训练数据', '【台词】'];
 
 const caughtScript = {
@@ -87,17 +87,17 @@ test('zero votes stay inside S1 S3 and S4, and the last three games avoid repeat
 
 test('voter wording follows the headcount, and long or sensitive quotes are clipped', () => {
   assert.match(endingOf({ voters: NAMES, playerVotes: 4 }, { templateId: 'C2' }).text, /全桌表示/);
-  assert.doesNotMatch(endingOf({ voters: NAMES, playerVotes: 4 }, { templateId: 'C2' }).text, /四位同事|柯老师/);
+  assert.doesNotMatch(endingOf({ voters: NAMES, playerVotes: 4 }, { templateId: 'C2' }).text, /四位同事|Claude/);
   assert.match(endingOf({ voters: NAMES, playerVotes: 4 }, { templateId: 'C3' }).text, /四位同事一致认为/);
   assert.match(endingOf({ voters: NAMES.slice(0, 3), playerVotes: 3 }, { templateId: 'C3' }).text, /三位同事一致认为/);
   assert.match(endingOf({ voters: NAMES, playerVotes: 4 }, { templateId: 'C1' }).text, /全桌投了你/);
-  assert.match(endingOf({ voters: NAMES.slice(0, 2), playerVotes: 2 }, { templateId: 'C1' }).text, /柯老师和阿斯哥投了你/);
+  assert.match(endingOf({ voters: NAMES.slice(0, 2), playerVotes: 2 }, { templateId: 'C1' }).text, /Claude和GPT投了你/);
   assert.match(endingOf({
-    outcome: '潜伏成功', playerVotes: 1, voters: ['柯老师'], quote: '作为一个语言模型',
-  }, { templateId: 'S2' }).text, /柯老师倒是投了你/);
+    outcome: '潜伏成功', playerVotes: 1, voters: ['Claude'], quote: '作为一个语言模型',
+  }, { templateId: 'S2' }).text, /Claude倒是投了你/);
   assert.match(endingOf({
-    outcome: '潜伏成功', playerVotes: 2, voters: ['柯老师', '阿斯哥'], quote: '作为一个语言模型',
-  }, { templateId: 'S5' }).text, /柯老师和阿斯哥曾经接近真相/);
+    outcome: '潜伏成功', playerVotes: 2, voters: ['Claude', 'GPT'], quote: '作为一个语言模型',
+  }, { templateId: 'S5' }).text, /Claude和GPT曾经接近真相/);
 
   const long = '前面先垫一句完全无关的话，我昨天加班到很晚，后面还有很多。';
   assert.ok(long.length > 14);
@@ -118,12 +118,12 @@ test('voter wording follows the headcount, and long or sensitive quotes are clip
   assert.equal(quoted(marked.text)[0], longMark.slice(0, 14));
   const aiLong = '前面先垫一句完全无关的话，作为一个语言模型继续说下去，后面还有很多。';
   const aiClip = endingOf({
-    outcome: '潜伏成功', playerVotes: 1, voters: ['柯老师'], quote: aiLong,
+    outcome: '潜伏成功', playerVotes: 1, voters: ['Claude'], quote: aiLong,
   }, { templateId: 'S2' });
   assert.match(aiClip.text, /「作为一个」/);
 
   const plain = '这是一句没有任何特征的普通长句子用来垫字数';
-  const head = endingOf({ outcome: '潜伏成功', playerVotes: 1, voters: ['柯老师'], quote: plain, keywords: ['x'] }, { templateId: 'S2' });
+  const head = endingOf({ outcome: '潜伏成功', playerVotes: 1, voters: ['Claude'], quote: plain, keywords: ['x'] }, { templateId: 'S2' });
   assert.equal(head.text.includes(plain), false);
   assert.match(head.text, /这是一句没有任何特征的/);
   assert.ok(quoted(head.text).every(piece => piece.length <= 14 && plain.includes(piece)));
@@ -195,7 +195,7 @@ test('the spoken humanity score is truncated and never negative', () => {
     outcome: '潜伏成功',
     humanScore: -8,
     playerVotes: 1,
-    voters: ['阿斯哥'],
+    voters: ['GPT'],
     quote: '作为一个语言模型',
   }, { templateId: 'S2' });
   assert.equal(low.text.includes('-8'), false);

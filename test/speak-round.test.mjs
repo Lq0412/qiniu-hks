@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { matchAsset, ttsKey } from '../mixin-audio.mjs';
+import { createHash } from 'node:crypto';
+import { scriptedBody } from '../mixin-prompts.mjs';
+import { sanitizeForTts } from '../tts-text.mjs';
 import { createMixinLink } from '../mixin-link.mjs';
 import { presynthCatalog } from '../mixin-prompts.mjs';
 import { roleById, voiceOf } from '../mixin-roles.mjs';
@@ -113,7 +117,7 @@ test('speak:round uses one socket, distinct voices, verbatim host lines, and dro
     const detect = fake.detects[index];
     assert.equal(detect.agent_params.custom_replace_prompt, undefined);
     assert.equal(detect.agent_params.voice.id, voiceOf(roleById(cue.roleId)).voiceId);
-    assert.match(detect.text, new RegExp(`【台词】${cue.line}`));
+    assert.ok(detect.text.includes(`【台词】${sanitizeForTts(cue.line)}`));
     voices.add(detect.agent_params.voice.id);
   }
   assert.equal(voices.size, SPEAK_ROUND.length);
@@ -197,10 +201,79 @@ test('presynth writes stable small mxop files and a manifest on one connection',
     const printed = `${logs.join('\n')}\n${JSON.stringify(manifest)}`;
     assert.equal(printed.includes(TOKEN), false);
     assert.equal(printed.includes(KEY), false);
-    assert.match(logs.join('\n'), /presynth 完成：64 句/);
+    assert.match(logs.join('\n'), /presynth 完成：55 句/);
     assert.equal(/口播「/.test(logs.join('\n')), false);
     assert.match(logs.join('\n'), /这些文件已在 \.gitignore 里，不要提交。/);
   } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('presynth sanitizes detect text and preserves manifest text and stable keys', async () => {
+  const fake = installFake();
+  const dir = await mkdtemp(path.join(tmpdir(), 'presynth-tts-'));
+  const link = createMixinLink({
+    config: { deviceId: 'fake-device', clientId: 'fake-client' },
+    credentials: { url: 'wss://xrobo-io.qiniuapi.com/v1/ws/', token: 'fake-token' },
+    createSocket: fake.createSocket,
+  });
+  try {
+    await link.connect();
+    const item = { id: 'list', roleId: 'host', text: '1️⃣核对🙂②结论👍' };
+    const report = await runPresynth({ dir, link, catalog: [item], log() {} });
+    assert.ok(fake.detects[0].text.includes('【台词】第一、核对第二、结论（局势：'));
+    assert.equal(report.lines[0].text, item.text);
+    assert.equal(report.lines[0].file, 'list.mxop');
+  } finally {
+    link.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('presynth and runtime invalidate missing or stale TTS hashes and changed voices, and reuse unchanged audio', async () => {
+  const fake = installFake();
+  const dir = await mkdtemp(path.join(tmpdir(), 'presynth-cache-'));
+  const link = createMixinLink({
+    config: { deviceId: 'fake-device', clientId: 'fake-client' },
+    credentials: { url: 'wss://xrobo-io.qiniuapi.com/v1/ws/', token: 'fake-token' },
+    createSocket: fake.createSocket,
+  });
+  const item = { id: 'list', roleId: 'host', text: '1️⃣核对🙂②结论👍' };
+  const voiceId = voiceOf(roleById('host')).voiceId;
+  const request = { text: item.text, voiceId };
+  const run = () => runPresynth({ dir, link, catalog: [item], log() {} });
+  try {
+    await link.connect();
+    const initial = await run();
+    const entry = initial.lines[0];
+    const speak = scriptedBody(fake.detects[0].text);
+    assert.equal(entry.ttsHash, createHash('sha256').update(JSON.stringify([speak, voiceId])).digest('hex').slice(0, 16));
+    assert.equal(ttsKey(item.text, voiceId), ttsKey(speak, voiceId));
+    assert.notEqual(ttsKey(item.text, voiceId), ttsKey(item.text, 'other-voice'));
+    assert.equal(matchAsset(initial.manifest, request).ttsHash, entry.ttsHash);
+    await run();
+    assert.equal(fake.detects.length, 1, 'unchanged audio is skipped');
+    for (const change of ['missing hash', 'stale hash', 'changed voice']) {
+      const old = { ...entry };
+      if (change === 'missing hash') delete old.ttsHash;
+      if (change === 'stale hash') old.ttsHash = createHash('sha256').update(JSON.stringify([item.text, voiceId])).digest('hex').slice(0, 16);
+      if (change === 'changed voice') {
+        old.voiceId = 'other-voice';
+        old.ttsHash = ttsKey(item.text, old.voiceId);
+      }
+      const manifest = { version: 1, lines: [old] };
+      assert.equal(matchAsset(manifest, request), null, change);
+      await writeFile(path.join(dir, 'manifest.json'), JSON.stringify(manifest));
+      const before = fake.detects.length;
+      const refreshed = await run();
+      assert.equal(fake.detects.length, before + 1, `${change} is resynthesized`);
+      assert.equal(matchAsset(refreshed.manifest, request).ttsHash, entry.ttsHash);
+      await run();
+      assert.equal(fake.detects.length, before + 1, 'refreshed audio is skipped');
+    }
+    assert.equal(fake.sockets.length, 1);
+  } finally {
+    link.close();
     await rm(dir, { recursive: true, force: true });
   }
 });

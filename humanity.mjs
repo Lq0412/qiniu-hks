@@ -410,7 +410,9 @@ export function scoreHumanity(lines, context = {}) {
   for (const line of lines ?? []) {
     const part = scoreUtterance(line, { ...context, keywords: line.keywords ?? context.keywords });
     score += part.delta;
-    breakdown.push({ delta: part.delta, features: part.features, kind: line.kind ?? 'speak', round: line.round ?? null });
+    // 人味原始分从 0 累加，不截断；aiScore 才按 100 - score * 10 截断到 0–100。
+    const labels = { break: '身份或粗口暴露', emotion: '表达情绪', filler: '多次口头语', life: '生活细节', laugh: '说了笑声', stall: '发言停顿', interrupt: '激动插嘴', length: '发言长度', 'ai-tone': '模型语气', structured: '结构化表达', compliance: '合规提醒', keyword: '命中话题关键词', duration: '语音时长稳定', frame: '冷静引用辩护' };
+    for (const feature of part.features) breakdown.push({ label: labels[feature.id], delta: feature.delta, quote: String(line.text ?? ''), id: feature.id, kind: line.kind ?? 'speak', round: line.round ?? null });
   }
   return { score, breakdown, aiScore: clampScore(score) };
 }
@@ -437,7 +439,7 @@ export function scapegoatOf(seats) {
   return seats[0];
 }
 
-export function planVotes({ seats, score, difficulty, playerVote = null }) {
+export function planVotes({ seats, score, difficulty, playerVote = null, random = () => 1 }) {
   const onPlayer = votesOnPlayer(score, difficulty);
   const goat = scapegoatOf(seats);
   const ordered = [...seats].sort((a, b) => a.seat - b.seat);
@@ -449,6 +451,7 @@ export function planVotes({ seats, score, difficulty, playerVote = null }) {
     }
   }
   const votes = ordered.map(voter => {
+    if (random() < 0.05) return { seat: voter.seat, roleId: voter.roleId, name: voter.name, targetSeat: null, targetRoleId: null, targetName: '弃权' };
     let target;
     if (voters.has(voter.seat)) target = { seat: 5, roleId: 'player', name: '五号' };
     else if (voter.seat !== goat.seat) target = goat;
@@ -461,17 +464,18 @@ export function planVotes({ seats, score, difficulty, playerVote = null }) {
   });
   const tally = { 5: 0 };
   for (const seat of ordered) tally[seat.seat] = 0;
-  for (const vote of votes) tally[vote.targetSeat] += 1;
-  return { votes, tally, onPlayer, playerVote, scapegoatSeat: goat.seat };
+  let abstentions = 0;
+  for (const vote of votes) { if (vote.targetSeat === null) abstentions += 1; else tally[vote.targetSeat] += 1; }
+  return { votes, tally, abstentions, onPlayer: tally[5], playerVote, scapegoatSeat: goat.seat };
 }
 
 // ADR-007（#18）：5 号的 AI 票 ≥2 且为最高（并列最高也算）才是被识破，否则潜伏成功。
 // 甩锅大师只在潜伏成功，且玩家投中的座位是 AI 票里严格第二高。0 票不算第二。
-export function judgeOutcome({ tally, playerVote = null }) {
+export function judgeOutcome({ tally, playerVote = null, abstentions = 0 }) {
   const playerVotes = tally[5] ?? 0;
   const seats = Object.keys(tally).map(Number);
   const max = Math.max(...seats.map(seat => tally[seat] ?? 0));
-  const caught = playerVotes >= 2 && playerVotes === max;
+  const caught = playerVotes >= 2 && playerVotes === max && abstentions < max;
   const positive = [...new Set(seats.map(seat => tally[seat] ?? 0).filter(count => count > 0))].sort((a, b) => b - a);
   const secondCount = positive.length >= 2 ? positive[1] : null;
   const secondSeats = secondCount == null ? [] : seats.filter(seat => seat !== 5 && tally[seat] === secondCount);
