@@ -31,7 +31,7 @@ test('the text API finishes a demo without the microphone path', async () => {
     const cookie = created.headers.get('set-cookie').split(';')[0];
     const { id, game } = await created.json();
     assert.equal(game.stage, 'lobby');
-    assert.equal(game.playerAlias, '碳基-7B');
+    assert.equal(game.playerAlias, '牛小七');
     assert.equal(game.humanScore, null);
     const act = async (action, body) => {
       const response = await post(`/api/mixin/${id}/${action}`, body, base, cookie);

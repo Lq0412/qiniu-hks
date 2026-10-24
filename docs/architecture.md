@@ -318,3 +318,10 @@ npm run play:voice
 | 同次复验 H 局 | 临时副本 9s 超时，按浏览器节奏 | 4/27 句无声，均为 accuse 长句；超时后的下一句有声。揭晓只有过渡音频，结局长句仍超时，因此不能把「其余句有声」解释为结局完整。 |
 
 这些是特定提交、缓存和节奏条件下的记录，不是所有环境的性能保证。本次文档提交仅跑云端离线测试与文字模拟，测试只用假 WSS，不连接真机。音色实际听感、浏览器播放与打断、预合成中途开局及结局续跑、超时后下一句恢复、完整揭晓口播仍需真机验收；玩家麦克风输入尚未接入，不列为已验收功能。
+
+## 后端资源与结算字段补充
+
+- `GET /mixin/assets/*` 从 `public/mixin/assets` 提供图片，测试可注入 `createApp({ assetDir })`；拒绝路径穿越，缺失返回 404。不改变语音资源路由。
+- 玩家投票接受 `{seat:null}` 或 `{skip:true}`，以 `playerAbstained` 区分尚未投票。AI 每票有 5% 弃权概率，使用由 seed 派生的独立 RNG；其余目标分配不变。AI 弃权不计入座位 tally，以 `abstentions` 单列；弃权达到最高（含并列）时无人被识破。玩家票仍只影响甩锅大师。
+- 揭晓后的 `game.human.breakdown` 按现有 humanity 规则列出 `{label,delta,quote,id,kind,round}`，总和等于未截断的 `human.score`。旧六题 scoring.mjs 属于不同测评，不参与此游戏。
+- 角色 id 与音色目录不变，显示名改为 Claude / GPT / DeepSeek / Cursor / Gemini，玩家默认牛小七；显式 alias 仍保留。前端硬编码名单、弃权按钮与明细展示留给前端 PR。

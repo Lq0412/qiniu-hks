@@ -197,7 +197,7 @@ test('presynth writes stable small mxop files and a manifest on one connection',
     const printed = `${logs.join('\n')}\n${JSON.stringify(manifest)}`;
     assert.equal(printed.includes(TOKEN), false);
     assert.equal(printed.includes(KEY), false);
-    assert.match(logs.join('\n'), /presynth 完成：64 句/);
+    assert.match(logs.join('\n'), /presynth 完成：55 句/);
     assert.equal(/口播「/.test(logs.join('\n')), false);
     assert.match(logs.join('\n'), /这些文件已在 \.gitignore 里，不要提交。/);
   } finally {

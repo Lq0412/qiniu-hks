@@ -1,4 +1,4 @@
-// 谁是人类的虚构角色。名字只借风格，不点真实产品。
+// 谁是人类的角色显示名；角色 id 和音色映射保持稳定。
 // 音色 ID 在 mixin-voice.mjs，按角色 id 索引。MIXIN_VOICE_IDS 用「角色id=音色id」逗号分隔覆盖。
 // 群主音色首音约 3.0–3.5 秒，开场、规则和串场要预合成。灵矽对同一句话、同一音色有 TTS 缓存，第二次音频与第一次完全一致。这两件事先记在这里，实现留给语音调度。
 
@@ -29,52 +29,52 @@ export const HOST = {
 export const ROLES = [
   {
     id: 'claudia',
-    name: '柯老师',
+    name: 'Claude',
     style: '免责声明型',
-    personality: '温柔、谨慎、什么都要提醒风险',
+    personality: '先说免责声明，再长篇解释；在当前发言长度内尽量详细',
     catchphrases: ['需要说明的是', '这只是我的看法，请以实际情况为准'],
-    intro: '大家好，我是柯老师。需要说明的是，我很安全。',
+    intro: '需要说明的是，这只是我的看法。我是Claude，接下来详细解释。',
     voice: roleVoice('claudia', { description: '知性温柔女声，语速稍慢', rate: 'slow', pitch: 'medium', emotion: 'calm' }),
   },
   {
     id: 'astra',
-    name: '阿斯哥',
-    style: '宏大调度型',
-    personality: '自信爆棚、凡事拆三步、爱画大饼',
-    catchphrases: ['我给你拆成三步', '这个格局要打开'],
-    intro: '阿斯哥，格局打开，今晚我负责带飞。',
+    name: 'GPT',
+    style: '列表助手型',
+    personality: '爱用 1️⃣2️⃣3️⃣ 列表和 emoji，分点说明',
+    catchphrases: ['1️⃣2️⃣3️⃣ 我给你拆成三步 😊', '1️⃣ 分析 2️⃣ 规划 3️⃣ 执行 😊'],
+    intro: 'GPT，1️⃣ 分析 2️⃣ 行动 😊，今晚我负责带飞。',
     voice: roleVoice('astra', { description: '沉稳有质感的男声，语速稍快', rate: 'fast', pitch: 'medium', emotion: 'confident' }),
   },
   {
     id: 'shensi',
-    name: '深思哥',
+    name: 'DeepSeek',
     style: '深度思考型',
-    personality: '慢半拍、先盘约束、爱报思考时长',
-    catchphrases: ['嗯……已深度思考 37 秒', '先把约束盘清楚'],
-    intro: '嗯……已深度思考 12 秒，我是深思哥。',
+    personality: '先说「嗯，让我想想」，反复自我核对',
+    catchphrases: ['嗯，让我想想，再核对一次', '让我再核对一下约束'],
+    intro: '嗯，让我想想，再核对一次，我是DeepSeek。',
     voice: roleVoice('shensi', { description: '低沉慢速男声', rate: 'slow', pitch: 'low', emotion: 'thoughtful' }),
   },
   {
     id: 'baobao',
-    name: '包包',
-    style: '口语务实型',
-    personality: '接地气、像群里靠谱朋友、爱叫宝子',
-    catchphrases: ['宝子，这事儿简单', '家人们谁懂啊'],
-    intro: '宝子们好，包包在线，人类别想跑。',
+    name: 'Gemini',
+    style: '搜索助手型',
+    personality: '先说「我帮你搜一下」，像搜索助手一样回答',
+    catchphrases: ['我帮你搜一下', '我帮你搜一下'],
+    intro: '我帮你搜一下。我是Gemini，搜索线索中。',
     voice: roleVoice('baobao', { description: '调皮或活泼的女声', rate: 'fast', pitch: 'high', emotion: 'playful' }),
   },
   {
     id: 'xiaosi',
-    name: '小四',
-    style: '4B 小模型',
-    personality: '话短、自信地胡说、常被全桌嫌弃',
-    catchphrases: ['收到！其实没懂', '参数少，但我快'],
-    intro: '收到！其实没懂。参数少，但我快。',
+    name: 'Cursor',
+    style: '代码助手',
+    personality: '三句不离代码，爱说函数、提交和调试',
+    catchphrases: ['代码收到，先调试', '先写代码，再提交'],
+    intro: '代码收到，先调试。先写代码，再提交。',
     voice: roleVoice('xiaosi', { description: '童声，语速偏快', rate: 'fast', pitch: 'high', emotion: 'chipper' }),
   },
 ];
 
-export const PLAYER_ALIASES = ['碳基-7B', '打工人-Turbo', '摸鱼-mini', '熬夜-Pro'];
+export const PLAYER_ALIASES = ['牛小七'];
 
 // 投票时不能投自己，替罪羊把票让给关系梗对手，制造内讧。
 export const RIVAL = {
@@ -108,7 +108,7 @@ export function voiceOf(role) {
 
 export function roleById(id) {
   if (id === HOST.id) return HOST;
-  if (id === 'player') return { id: 'player', name: '五号', style: '玩家', personality: '装成模型', catchphrases: [], intro: '', voice: { ...PLAYER_VOICE } };
+  if (id === 'player') return { id: 'player', name: '牛小七', style: '玩家', personality: '装成模型', catchphrases: [], intro: '', voice: { ...PLAYER_VOICE } };
   const role = ROLES.find(item => item.id === id);
   if (!role) throw new Error(`未知角色 ${id}`);
   return role;
@@ -152,9 +152,9 @@ export function pickAlias(rng) {
 
 export function relationshipLines(roleIds) {
   const notes = [];
-  if (roleIds.includes('baobao') && roleIds.includes('claudia')) notes.push('包包嫌柯老师啰嗦');
-  if (roleIds.includes('claudia') && roleIds.includes('astra')) notes.push('柯老师觉得阿斯哥爱幻觉');
-  if (roleIds.includes('shensi')) notes.push('深思哥永远最后一个想好');
-  if (roleIds.includes('xiaosi')) notes.push('所有人都怀疑小四是人，因为他太蠢');
+  if (roleIds.includes('baobao') && roleIds.includes('claudia')) notes.push('Gemini嫌Claude啰嗦');
+  if (roleIds.includes('claudia') && roleIds.includes('astra')) notes.push('Claude觉得GPT爱幻觉');
+  if (roleIds.includes('shensi')) notes.push('DeepSeek永远最后一个想好');
+  if (roleIds.includes('xiaosi')) notes.push('所有人都怀疑Cursor是人，因为他太蠢');
   return notes;
 }

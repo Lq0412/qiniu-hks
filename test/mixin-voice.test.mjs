@@ -10,7 +10,7 @@ const request = {
   roleId: 'claudia',
   voice: { voiceId: null, label: '知性温柔女声', rate: 'slow', pitch: 'medium', emotion: 'calm', verified: false },
   instruction: '【舞台指令】自我介绍',
-  fallbackText: '大家好，我是柯老师。',
+  fallbackText: '大家好，我是Claude。',
 };
 
 test('seat speech validates the request and falls back without a live voice', async () => {

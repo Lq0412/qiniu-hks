@@ -147,7 +147,7 @@ export function createMixinGame(options = {}) {
   if (Array.isArray(options.roleIds)) seatsFromIds(options.roleIds);
   const seats = demo || !Array.isArray(options.roleIds) ? (demo ? defaultLineup() : pickLineup(rng)) : seatsFromIds(options.roleIds);
   const alias = options.alias == null ? null : cleanAlias(options.alias);
-  const playerAlias = demo ? '碳基-7B' : (alias ?? pickAlias(rng));
+  const playerAlias = demo ? '牛小七' : (alias ?? pickAlias(rng));
   const now = options.now ?? 0;
   return {
     id: randomUUID(),
@@ -731,7 +731,7 @@ function announce(game, now) {
   const deadline = game.deadlineAt ?? now + TIMEOUTS.vote;
   ensurePlan(game);
   const cues = game.votePlan.votes.map(vote => {
-    const line = vote.targetSeat === null ? '证据不足，我弃权。' : `${roleById(vote.roleId).catchphrases[0]}，我投${vote.targetSeat}号。`.slice(0, 20);
+    const line = vote.targetSeat === null ? '证据不足，我弃权。' : `我投${vote.targetSeat}号，${roleById(vote.roleId).catchphrases[0]}。`.slice(0, 20);
     return cueFields(game, {
       kind: 'vote', seat: vote.seat, roleId: vote.roleId,
       voice: game.seats.find(seat => seat.seat === vote.seat).voice,

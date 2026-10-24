@@ -466,7 +466,7 @@ export function planVotes({ seats, score, difficulty, playerVote = null, random 
   for (const seat of ordered) tally[seat.seat] = 0;
   let abstentions = 0;
   for (const vote of votes) { if (vote.targetSeat === null) abstentions += 1; else tally[vote.targetSeat] += 1; }
-  return { votes, tally, abstentions, onPlayer, playerVote, scapegoatSeat: goat.seat };
+  return { votes, tally, abstentions, onPlayer: tally[5], playerVote, scapegoatSeat: goat.seat };
 }
 
 // ADR-007（#18）：5 号的 AI 票 ≥2 且为最高（并列最高也算）才是被识破，否则潜伏成功。

@@ -207,7 +207,7 @@ test('one socket plays a demo, reuses presynth, and the page can fetch each wav'
     assert.ok(fake.aborts >= 1);
     assert.equal(state.generation, 1);
     assert.equal(typeof state.report.quote, 'string');
-    assert.ok(state.dialogue.some(line => line.text === openingLine('模型年会', '碳基-7B')));
+    assert.ok(state.dialogue.some(line => line.text === openingLine('模型年会', '牛小七')));
     assert.ok(state.dialogue.some(line => line.text === HOST_RULES));
     assert.ok(state.dialogue.some(line => line.text === '收到'));
     assert.ok(state.dialogue.some(line => line.text === INTERRUPT));
@@ -225,6 +225,8 @@ test('one socket plays a demo, reuses presynth, and the page can fetch each wav'
     assert.equal(fake.detects.every(item => typeof item.agent_params.voice.id === 'string'), true);
   } finally {
     await new Promise(resolve => server.close(resolve));
+    // 关闭会中止后台预合成；等已开始的临时文件写入收尾后再删除目录。
+    await server.audioLane.warmupBackground();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -578,10 +580,10 @@ for (const missing of [false, true]) {
     const f = await liveFixture(undefined, { audioDir: dir });
     try {
       const cue = f.session.game.cue;
-      Object.assign(cue, { kind: 'host_card', card: '测试题。', nextName: '柯老师',
-        line: '第1题：测试题。请柯老师先来。', fallbackText: '第1题：测试题。请柯老师先来。',
-        instruction: '【台词】第1题：测试题。请柯老师先来。' });
-      const lines = ['第1题：测试题。', '请柯老师先来。'].slice(0, missing ? 1 : 2).map((text, i) => ({
+      Object.assign(cue, { kind: 'host_card', card: '测试题。', nextName: 'Claude',
+        line: '第1题：测试题。请Claude先来。', fallbackText: '第1题：测试题。请Claude先来。',
+        instruction: '【台词】第1题：测试题。请Claude先来。' });
+      const lines = ['第1题：测试题。', '请Claude先来。'].slice(0, missing ? 1 : 2).map((text, i) => ({
         id: `part-${i}`, text, voiceId: cue.voice.voiceId, file: `part-${i}.wav`, kind: 'tts',
       }));
       for (const item of lines) await writeFile(path.join(dir, item.file), wavFromPcm(Buffer.alloc(640, 3)));
