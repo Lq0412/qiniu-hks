@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ACCUSE_PROMPT, allCards, cardById, drawCards, replyFor, sceneById, SCENES } from '../mixin-bank.mjs';
-import { agentPrompt, openingLine, renderBrief, reportInstruction, stageDirection, toneFor } from '../mixin-prompts.mjs';
+import { ACCUSATION_TEMPLATES, accusationLine, agentPrompt, fillAccusation, HELLO_BRIEF, openingLine, renderBrief, reportInstruction, stageDirection, toneFor } from '../mixin-prompts.mjs';
 import { HOST, PLAYER_ALIASES, ROLES, createRng, defaultLineup, pickAlias, pickLineup, relationshipLines, roleById, voiceOf } from '../mixin-roles.mjs';
 import { VOICE_CATALOG } from '../mixin-voice.mjs';
 
@@ -118,6 +118,9 @@ test('prompts keep the brief slot and can render every stage direction', () => {
   assert.match(agentPrompt, /\{\{counter_brief\}\}/);
   assert.doesNotMatch(agentPrompt, /\{\{game_brief\}\}/);
   assert.match(agentPrompt, /绝不向5号或玩家提问/);
+  assert.match(agentPrompt, /【台词】/);
+  assert.match(agentPrompt, /不调用任何工具/);
+  assert.match(HELLO_BRIEF, /不要猜测谁是人类/);
   const brief = renderBrief({
     sceneName: '模型年会',
     background: '年底述职。',
@@ -141,11 +144,35 @@ test('prompts keep the brief slot and can render every stage direction', () => {
   });
   assert.match(spoken, /1号-原话/);
   assert.match(openingLine('模型年会', '碳基-7B'), /碳基-7B/);
-  const cue = { seat: 1, name: '柯老师', personality: '谨慎', sceneName: '模型年会', round: 1, card: '题', nextName: '阿斯哥', spoken: '还没有', target: 5, targetName: '碳基-7B', quote: '原话', tone: '调侃', interrupt: '打断', outcome: '潜伏成功', received: 1, alias: '碳基-7B' };
-  for (const kind of ['host_open', 'intro', 'host_card', 'answer', 'wrap', 'nudge', 'accuse', 'rebuttal', 'vote', 'reveal']) {
-    assert.match(stageDirection({ ...cue, kind }), /^【舞台指令】/);
+  const cue = { seat: 1, name: '柯老师', personality: '谨慎', sceneName: '模型年会', round: 1, card: '题', nextName: '阿斯哥', spoken: '还没有', target: 5, targetName: '碳基-7B', quote: '原话', tone: '调侃', interrupt: '打断', outcome: '潜伏成功', received: 1, alias: '碳基-7B', line: '固定台词' };
+  for (const kind of ['intro', 'answer', 'rebuttal']) {
+    const text = stageDirection({ ...cue, kind });
+    assert.match(text, /^角色：柯老师（谨慎）。话题：/);
+    assert.match(text, /一句话，20字以内。$/);
+    assert.match(text, /（局势：/);
+    assert.doesNotMatch(text, /【台词】/);
   }
+  for (const kind of ['host_open', 'host_card', 'wrap', 'nudge', 'accuse', 'vote', 'reveal']) {
+    const text = stageDirection({ ...cue, kind, seat: 0, name: kind === 'reveal' ? '' : '群主·零号' });
+    assert.match(text, /^角色：群主·零号。【台词】固定台词（局势：/);
+    assert.doesNotMatch(text, /口头禅|舞台指令/);
+  }
+  assert.throws(() => stageDirection({ kind: 'host_open', name: '群主·零号' }), /缺少台词/);
   assert.throws(() => stageDirection({ kind: 'nope' }), /未知舞台指令/);
+  const quote = '我昨天加班到十点';
+  for (const [roleId, templates] of Object.entries(ACCUSATION_TEMPLATES)) {
+    assert.ok(templates.length >= 3, roleId);
+    templates.forEach((template, index) => {
+      const line = fillAccusation(template, '碳基-7B', quote);
+      assert.equal(line.includes(`「${quote}」`), true, `${roleId}#${index}`);
+      assert.equal(line.split(quote).length, 2, `${roleId}#${index}`);
+    });
+    const picked = accusationLine({ roleId, targetName: '碳基-7B', quote, random: () => 0 });
+    assert.equal(picked.includes(`「${quote}」`), true);
+  }
+  assert.throws(() => fillAccusation('没有插槽', '五号', quote), /插槽/);
+  assert.throws(() => accusationLine({ roleId: 'host', targetName: '五号', quote }), /缺少指控模板/);
+  assert.equal(accusationLine({ roleId: 'claudia', targetName: '五号', quote, random: () => Number.NaN }).includes(quote), true);
   assert.equal(toneFor('hell'), '笃定');
   assert.equal(toneFor('missing'), '认真');
   assert.match(reportInstruction({ outcome: '潜伏成功', votes: '1/4', catcher: '包包', aiScore: 80, playerLines: ['原话'], titles: ['人形 Transformer'] }), /不得更改/);

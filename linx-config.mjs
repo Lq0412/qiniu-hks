@@ -12,11 +12,30 @@ export async function deviceConfig(path = new URL('./.linx-device.json', import.
   }
 }
 
-export async function ota(config, fetcher = fetch) {
+// 真机已确认改成 who-is-human 不影响设备绑定。仍可用环境变量或设备配置覆盖。
+// LINX_APP_NAME、LINX_APP_ELF_SHA256，或设备配置里的 applicationName、elfSha256。
+const DEFAULT_APP_NAME = 'who-is-human';
+const DEFAULT_APP_ELF_SHA256 = 'who-is-human-local';
+
+function textOr(value, fallback) {
+  if (typeof value !== 'string') return fallback;
+  const text = value.trim();
+  return text || fallback;
+}
+
+export function otaApplication(config = {}, env = process.env) {
+  return {
+    name: textOr(config.applicationName, textOr(env.LINX_APP_NAME, DEFAULT_APP_NAME)),
+    version: '1.0.0',
+    elf_sha256: textOr(config.elfSha256, textOr(env.LINX_APP_ELF_SHA256, DEFAULT_APP_ELF_SHA256)),
+  };
+}
+
+export async function ota(config, fetcher = fetch, env = process.env) {
   const response = await fetcher('https://xrobo.qiniuapi.com/v1/ota/', {
     method: 'POST', signal: AbortSignal.timeout(15000),
     headers: { 'Content-Type': 'application/json', 'Activation-Version': '1', 'Device-Id': config.deviceId, 'Client-Id': config.clientId, 'User-Agent': 'who-is-human/1.0.0' },
-    body: JSON.stringify({ version: 0, uuid: config.clientId, mac_address: config.deviceId, application: { name: 'counter-game', version: '1.0.0', elf_sha256: 'counter-game-local' }, board: { type: 'xiaoling-web-test', ssid: 'local', rssi: 0, mac: config.deviceId } }),
+    body: JSON.stringify({ version: 0, uuid: config.clientId, mac_address: config.deviceId, application: otaApplication(config, env), board: { type: 'xiaoling-web-test', ssid: 'local', rssi: 0, mac: config.deviceId } }),
   });
   if (!response.ok) throw new Error(`Linx OTA 返回 ${response.status}`);
   return response.json();

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { titlesFor } from '../humanity.mjs';
 import { ENDING_FALLBACK, ENDING_TEMPLATES, renderEnding } from '../mixin-endings.mjs';
-import { stageDirection } from '../mixin-prompts.mjs';
+import { scriptedBody, stageDirection } from '../mixin-prompts.mjs';
 import { createMixinGame } from '../mixin-game.mjs';
 import { createTextSession, playScript, runUntilResult } from '../mixin-session.mjs';
 
@@ -50,7 +50,7 @@ test('ending templates are filled verbatim and keep the planned dash', () => {
     assert.match(ending.text, /6/);
     assert.match(ending.text, /我昨天加班/);
   }
-  assert.match(stageDirection({ kind: 'reveal', line: '五号，口播。' }), /^【台词】五号，口播。$/);
+  assert.match(stageDirection({ kind: 'reveal', line: '五号，口播。' }), /^角色：群主·零号。【台词】五号，口播。（局势：/);
 });
 
 test('zero votes stay inside S1 S3 and S4, and the last three games avoid repeats', () => {
@@ -233,8 +233,8 @@ test('the oral script stays out of the public view until reveal and does not cha
 
   while (session.game.phase !== 'reveal') await session.step();
   const cue = session.view().cue;
-  assert.match(cue.instruction, /^【台词】/);
-  assert.equal(cue.instruction, `【台词】${session.view().report.endingText}`);
+  assert.match(cue.instruction, /^角色：群主·零号。【台词】/);
+  assert.equal(scriptedBody(cue.instruction), session.view().report.endingText);
   assert.doesNotMatch(cue.instruction, /[{}]/);
   assert.equal(Object.hasOwn(cue, 'fallbackText'), false);
   assert.ok(titlesFor('被识破', false).includes(session.view().report.title));

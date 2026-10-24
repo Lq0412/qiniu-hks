@@ -15,6 +15,15 @@ export const tools = [
   {name:'self.test.report',description:'六题确认后提交最终模型测评报告。report_json必须是包含型号、夯拉等级与三项带引用维度的JSON字符串，按当前提示中的结构填写。',inputSchema:{type:'object',properties:{report_json:{type:'string'}},required:['report_json']}},
 ];
 
+export function mcpRejectDetail(reply) {
+  try {
+    const parsed = JSON.parse(reply?.result?.content?.[0]?.text || '{}');
+    const error = parsed?.error;
+    if (typeof error === 'string' && error.trim()) return error.trim();
+    if (typeof error?.message === 'string' && error.message.trim()) return error.message.trim();
+  } catch { /* 坏 JSON 也要留下一句可读的原因 */ }
+  return '请求被拒绝';
+}
 export function mcpReply(payload,game,stage) {
   const reply={jsonrpc:'2.0',id:payload.id};
   if(payload.method==='initialize')return {...reply,result:{protocolVersion:'2024-11-05',capabilities:{tools:{}},serverInfo:{name:'human-benchmark',version:'1.0.0'}}};
@@ -85,7 +94,7 @@ export function connectLinx({ config, credentials, game, client, onClose, create
     if (message.type === 'mcp' && message.payload?.id !== undefined) {
       const reply = mcpReply(message.payload, game, stage);
       if (reply.result?.isError) {
-        try { console.error('[mcp拒绝]', message.payload.params?.name, JSON.parse(reply.result.content?.[0]?.text || '{}')?.error?.message); } catch {}
+        console.error('[mcp拒绝]', message.payload.params?.name || '未知工具', mcpRejectDetail(reply));
         const feedback = message.payload.params?.name === 'self.test.evaluate';
         emit({type:feedback?'feedback_error':'error',message:feedback?'这次反馈未能保存。可以重答，或点击重试反馈。':'报告尚未保存，测试员正在修正；也可以断开后重试。'});
       }

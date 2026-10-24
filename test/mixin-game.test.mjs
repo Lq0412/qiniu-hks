@@ -185,7 +185,7 @@ test('stage echo can be overridden, and opening text is not a player line', () =
   assert.equal(session.say('我先插一句').reason, 'intro');
   const opening = session.game.cue.fallbackText;
   assert.equal(Object.hasOwn(session.view().cue, 'fallbackText'), false);
-  assert.match(session.view().cue.instruction, /^【舞台指令】/);
+  assert.match(session.view().cue.instruction, /^角色：群主·零号。【台词】/);
   assert.doesNotMatch(session.view().brief, /五号得票/);
   return reach(session, 'round_player', 1).then(() => {
     assert.equal(session.say(opening).reason, 'echo');
@@ -314,6 +314,13 @@ test('interrupts, votes and stale cues stay inside the phase rules', async () =>
 
   const accusing = demoSession();
   await drive(accusing, caughtScript, 'accuse');
+  for (const cue of [accusing.game.cue, ...accusing.game.queue]) {
+    const item = accusing.game.script[cue.scriptIndex];
+    assert.equal(cue.fallbackText.includes(`「${item.quote}」`), true, item.quote);
+    assert.equal(cue.instruction.includes(`「${item.quote}」`), true, item.quote);
+    assert.match(cue.instruction, /^角色：.+。【台词】/);
+    assert.doesNotMatch(cue.instruction, /用你的口头禅/);
+  }
   assert.equal(accusing.interrupt('啊').reason, 'empty');
   assert.equal(accusing.interrupt(accusing.game.cue.instruction).reason, 'echo');
   const hit = accusing.interrupt(caughtScript.interrupt);

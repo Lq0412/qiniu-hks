@@ -7,7 +7,7 @@ import { createTextSession } from './mixin-session.mjs';
 const CREATE_FIELDS = new Set(['demo', 'difficulty', 'seed', 'sceneId', 'cardIds', 'roleIds', 'alias']);
 const SESSION_TTL_MS = 60 * 60 * 1000;
 
-export function createMixinHub({ now = Date.now, ttlMs = SESSION_TTL_MS } = {}) {
+export function createMixinHub({ now = Date.now, ttlMs = SESSION_TTL_MS, createSession = createTextSession } = {}) {
   const sessions = new Map();
   const sweep = () => {
     const clock = now();
@@ -17,9 +17,12 @@ export function createMixinHub({ now = Date.now, ttlMs = SESSION_TTL_MS } = {}) 
   };
   return {
     sessions,
+    clip(sessionId, clipId) {
+      return sessions.get(sessionId)?.clips?.get(clipId) ?? null;
+    },
     async dispatch({ method, path, body = {} }) {
       sweep();
-      if (method === 'POST' && path === '/api/mixin') return create(sessions, body, now);
+      if (method === 'POST' && path === '/api/mixin') return create(sessions, body, now, createSession);
       const match = /^\/api\/mixin\/([0-9a-f-]+)(?:\/([a-z]+))?$/.exec(path);
       if (!match) return { status: 404, payload: { error: '未找到接口。' } };
       const session = sessions.get(match[1]);
@@ -29,15 +32,15 @@ export function createMixinHub({ now = Date.now, ttlMs = SESSION_TTL_MS } = {}) 
       try {
         if (method === 'GET' && action === 'view') return ok(session);
         if (method !== 'POST') return { status: 404, payload: { error: '未找到接口。' } };
-        if (action === 'start') return done(session, session.start());
-        if (action === 'text') return done(session, session.say(body.text, body));
-        if (action === 'confirm') return done(session, session.confirm(body.revision));
-        if (action === 'vote') return done(session, session.vote(body.seat));
-        if (action === 'interrupt') return done(session, session.interrupt(body.text));
-        if (action === 'hint') return done(session, session.hint());
-        if (action === 'step') return done(session, await session.step());
-        if (action === 'restart') return done(session, session.restart());
-        if (action === 'tick') return done(session, tick(session, body));
+        if (action === 'start') return done(session, await session.start(), match[1]);
+        if (action === 'text') return done(session, session.say(body.text, body), match[1]);
+        if (action === 'confirm') return done(session, session.confirm(body.revision), match[1]);
+        if (action === 'vote') return done(session, session.vote(body.seat), match[1]);
+        if (action === 'interrupt') return done(session, session.interrupt(body.text), match[1]);
+        if (action === 'hint') return done(session, session.hint(), match[1]);
+        if (action === 'step') return done(session, await session.step(), match[1]);
+        if (action === 'restart') return done(session, session.restart(), match[1]);
+        if (action === 'tick') return done(session, tick(session, body), match[1]);
         return { status: 404, payload: { error: '未找到接口。' } };
       } catch (error) {
         if (error instanceof MixinError) return { status: 409, payload: { error: error.message, game: session.view() } };
@@ -73,11 +76,11 @@ function tick(session, body) {
   return session.tick(ms);
 }
 
-function create(sessions, body, now) {
+function create(sessions, body, now, createSession) {
   try {
     const options = createOptions(body ?? {});
     const id = randomUUID();
-    const session = createTextSession(options);
+    const session = createSession(options);
     session.updated = now();
     sessions.set(id, session);
     return {
@@ -95,7 +98,18 @@ function ok(session) {
   return { status: 200, payload: { game: session.view() } };
 }
 
-function done(session, result) {
+function done(session, result, id) {
   const game = result?.view ?? result?.game ?? session.view();
-  return { status: 200, payload: { ...result, game } };
+  const payload = { ...result, game };
+  if (payload.clipWav?.length && id) {
+    if (!session.clips) session.clips = new Map();
+    const clipId = randomUUID();
+    session.clips.set(clipId, payload.clipWav);
+    const audioUrl = `/api/mixin/${id}/clip/${clipId}${payload.reveal ? '?reveal=1' : ''}`;
+    payload.audioUrl = audioUrl;
+    payload.clip = { url: audioUrl };
+  }
+  delete payload.clipWav;
+  delete payload.reveal;
+  return { status: 200, payload };
 }
