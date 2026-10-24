@@ -375,3 +375,15 @@ test('AI abstentions are deterministic with RNG and never target a seat', () => 
   assert.equal(judgeOutcome({ tally: { 5: 2, 1: 0 }, abstentions: 2 }).caught, false);
   assert.equal(judgeOutcome({ tally: { 5: 2, 1: 2 }, abstentions: 0 }).caught, true);
 });
+
+test('humanity breakdown explains existing features and sums to raw score', () => {
+  for (const lines of [[], [{ text: '哈哈，我昨天加班，作为一个语言模型，首先分析，其次总结。', typed: true }], [{ text: '综上，已为您记录，请以实际情况为准。', typed: true }]]) {
+    const result = scoreHumanity(lines);
+    assert.equal(result.breakdown.reduce((sum, row) => sum + row.delta, 0), result.score);
+    assert.equal(result.aiScore, clampScore(result.score));
+    for (const row of result.breakdown) {
+      assert.equal(typeof row.label, 'string');
+      assert.ok(lines.some(line => line.text === row.quote));
+    }
+  }
+});

@@ -410,7 +410,9 @@ export function scoreHumanity(lines, context = {}) {
   for (const line of lines ?? []) {
     const part = scoreUtterance(line, { ...context, keywords: line.keywords ?? context.keywords });
     score += part.delta;
-    breakdown.push({ delta: part.delta, features: part.features, kind: line.kind ?? 'speak', round: line.round ?? null });
+    // 人味原始分从 0 累加，不截断；aiScore 才按 100 - score * 10 截断到 0–100。
+    const labels = { break: '身份或粗口暴露', emotion: '表达情绪', filler: '多次口头语', life: '生活细节', laugh: '说了笑声', stall: '发言停顿', interrupt: '激动插嘴', length: '发言长度', 'ai-tone': '模型语气', structured: '结构化表达', compliance: '合规提醒', keyword: '命中话题关键词', duration: '语音时长稳定', frame: '冷静引用辩护' };
+    for (const feature of part.features) breakdown.push({ label: labels[feature.id], delta: feature.delta, quote: String(line.text ?? ''), id: feature.id, kind: line.kind ?? 'speak', round: line.round ?? null });
   }
   return { score, breakdown, aiScore: clampScore(score) };
 }

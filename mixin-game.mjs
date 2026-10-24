@@ -439,6 +439,7 @@ export function viewMixin(game) {
     example: game.hintReleased && game.phase === 'round_player' ? card.examplePlayer : null,
     cue: game.cue ? publicCue(game.cue, game) : null,
     humanScore: showSecret || game.debug ? game.human.score : null,
+    human: showSecret || game.debug ? structuredClone(game.human) : null,
     aiScore: showSecret || game.debug ? game.human.aiScore : null,
     interrupts: game.interrupts.length,
     playerVote: game.playerVote,
