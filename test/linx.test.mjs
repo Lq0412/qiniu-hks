@@ -5,7 +5,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { deviceConfig, ota } from '../linx-config.mjs';
-import { connectLinx } from '../linx.mjs';
+import { connectLinx, isProcessSpeech } from '../linx.mjs';
 import { createGame } from '../game.mjs';
 
 class FakeSocket extends EventEmitter {
@@ -48,8 +48,27 @@ test('Linx hello, MCP, transcript, audio forwarding and client controls',()=>{
   assert.ok(f.client.sent.some(s=>typeof s.data==='string'&&JSON.parse(s.data).type==='error'));
   f.bridge.close();f.bridge.close();f.incoming({type:'stt',text:'旧消息'});assert.equal(f.game.turn,1);
 });
+test('tool process monologue is filtered out at sentence and audio level',()=>{
+ for(const text of ['我先查看一下当前测评状态。','我先读取当前的测评状态。','我来看看当前的测评状态','我来生成最终报告。','让我调用工具。','我来生成报告。'])assert.ok(isProcessSpeech(text),text);
+ for(const text of ['直接问定位，信息边界清晰。','时间地点忌口都齐了，群通知够利索。','你的鉴定结果是通义千问，夯爆了。','这是你的报告，收好。','报告已经生成，你是豆包型人类。','少了点烟火气，像群公告。'])assert.ok(!isProcessSpeech(text),text);
+ const f=fixture();
+ f.incoming({type:'hello',session_id:'s',audio_params:{format:'pcm',sample_rate:16000,channels:1}});
+ f.incoming({type:'tts',state:'start'});
+ f.incoming({type:'tts',state:'sentence_start',text:'我先查看一下当前测评状态。'});
+ assert.ok(!f.client.sent.some(s=>typeof s.data==='string'&&s.data.includes('查看')));
+ f.upstream.emit('message',Buffer.alloc(640),true);
+ assert.ok(!f.client.sent.some(s=>s.options?.binary));
+ f.incoming({type:'tts',state:'sentence_start',text:'直接问定位，信息边界清晰。'});
+ assert.ok(f.client.sent.some(s=>typeof s.data==='string'&&s.data.includes('直接问定位')));
+ f.upstream.emit('message',Buffer.alloc(640),true);
+ assert.ok(f.client.sent.some(s=>s.options?.binary));
+});
 test('Opus decoding and connection failures are explicit',()=>{
-  const f=fixture();f.incoming({type:'hello',audio_params:{format:'opus',sample_rate:24000,channels:1}});f.upstream.emit('message',Buffer.alloc(0),true);f.bridge.close();
+  const f=fixture();f.incoming({type:'hello',audio_params:{format:'opus',sample_rate:24000,channels:1}});f.upstream.emit('message',Buffer.alloc(10,0xAA),true);
+  assert.ok(f.client.sent.some(s=>typeof s.data==='string'&&s.data.includes('音频解码失败')));
+  f.incoming({type:'mcp',payload:{jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'self.test.evaluate',arguments:{question:1,revision:999,quote:'x',feedback:'x'}}}});
+  assert.ok(f.client.sent.some(s=>typeof s.data==='string'&&s.data.includes('这次反馈未能保存')));
+  f.bridge.close();
   const invalid=fixture();invalid.incoming({type:'hello',audio_params:{format:'unknown',sample_rate:1,channels:2}});assert.equal(invalid.client.readyState,3);
   const err=fixture();err.upstream.emit('error',new Error('network'));assert.equal(err.client.readyState,3);
   const closed=fixture();closed.upstream.close();assert.equal(closed.client.readyState,3);

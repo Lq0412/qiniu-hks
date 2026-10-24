@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { questions, models, tiers, dimensions } from './benchmark.mjs';
+import { scoreAnswers } from './scoring.mjs';
+
+const shortText = (value, max) => typeof value === 'string' && value.trim() && value.trim().length <= max && value.trim();
+const specFields = ['contextWindow', 'reasoning', 'deployBest', 'deployWorst'];
 
 export class GameError extends Error {}
 export function createGame() {
@@ -26,8 +30,14 @@ export function saveReport(game,stage,reportJson) {
   if(stage!==questions.length||game.stage!==stage||game.status!=='reporting')throw new GameError('只有全部回答确认后才能生成报告。');
   if(typeof reportJson!=='string'||reportJson.length>12000)throw new GameError('报告格式不合法。');
   let report;try{report=JSON.parse(reportJson);}catch{throw new GameError('报告需要有效JSON。');}
-  if(!report||!models.includes(report.model)||!tiers.includes(report.tier))throw new GameError(`model必须逐字选自：${models.join('、')}；tier必须逐字选自：${tiers.join('、')}。`);
+  if(!report||!models.includes(report.model))throw new GameError(`model必须逐字选自：${models.join('、')}。`);
+  // 档位由确定性事实台账护栏约束，模型只能在证据允许的档位内套文案。
+  const score=scoreAnswers(game.answers);
+  if(!tiers.includes(report.tier)||!score.allowedTiers.includes(report.tier))throw new GameError(`等级「${report.tier}」与本局证据不符，tier只能在：${score.allowedTiers.join('、')}。`);
+  const variant=shortText(report.variant,12);if(!variant)throw new GameError('variant是不超过12字的型号风格副标，必填。');
   for(const field of ['headline','summary','roast','advice'])if(typeof report[field]!=='string'||!report[field].trim()||report[field].length>300)throw new GameError(`报告${field}缺失或过长。`);
+  const specs={};if(!report.specs||typeof report.specs!=='object')throw new GameError('报告需要specs规格栏。');
+  for(const field of specFields){const v=shortText(report.specs[field],24);if(!v)throw new GameError(`specs.${field}是不超过24字的必填短句。`);specs[field]=v;}
   if(!Array.isArray(report.dimensions)||report.dimensions.length!==3)throw new GameError('报告需要三项维度。');
   for(let i=0;i<3;i++){
     const d=report.dimensions[i],answer=game.answers.find(a=>a.question===d?.question-1);
@@ -35,7 +45,8 @@ export function saveReport(game,stage,reportJson) {
     if(!Number.isInteger(d.question)||!answer||typeof d.quote!=='string'||!d.quote.trim()||!answer.text.includes(d.quote))throw new GameError('报告引用不在确认回答中，请逐字摘录后重新提交；短回答可以引用全文。');
   }
   // Keep only validated presentation fields; model output is never executable UI.
-  game.report={model:report.model,tier:report.tier,headline:report.headline,summary:report.summary,roast:report.roast,advice:report.advice,dimensions:report.dimensions.map(d=>({name:d.name,verdict:d.verdict,comment:d.comment,question:d.question,quote:d.quote}))};
+  // bars and ledger come from deterministic scoring, never from model-generated numbers.
+  game.report={model:report.model,tier:report.tier,variant,headline:report.headline,summary:report.summary,roast:report.roast,advice:report.advice,specs,bars:score.bars,ledger:score.ledger,dimensions:report.dimensions.map(d=>({name:d.name,verdict:d.verdict,comment:d.comment,question:d.question,quote:d.quote}))};
   game.status='done';return view(game);
 }
 export function view(game) {
