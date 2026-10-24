@@ -562,7 +562,7 @@ function lobbyHtml() {
       ${guests.map(item => `<div class="slot">${av(item.roleId)}<span class="nm">${esc(characterOf(item.roleId).label)}</span><small>AI 嘉宾</small></div>`).join('')}
       <div class="slot me">${av('player')}<span class="nm">${esc(state.alias || '牛小七')}</span><small>5 号 · 你</small></div>
     </div>
-    <div class="rule">${mini('player')}<span>你是 <b>牛小七</b>，混在 AI 里，<b>别被认出来</b>。<small>每局随机 4 位嘉宾上桌 · 网页试玩版 · 完整语音版在灵矽设备上开麦玩</small></span></div>
+    <div class="rule">${mini('player')}<span>你是 <b>牛小七</b>，混在 AI 里，<b>别被认出来</b>。<small>每局随机 4 位嘉宾上桌 · 网页试玩版 · 完整语音版接入灵矽语音</small></span></div>
     <button class="btn go" type="submit" id="start">开播 ▶</button>
   </form>`;
 }
@@ -774,7 +774,7 @@ function paintDock() {
 
 function dockHtml(mode) {
   const drawer = `<button class="drawer" type="button" data-log>发言记录 <b>(<span id="log-count">0</span>)</b> ▲</button>`;
-  const hold = `<button class="btn mic" type="button" id="hold" title="网页试玩版用打字；语音版在灵矽设备上说话。" aria-label="按住说话">${ICON.mic}</button>`;
+  const hold = `<button class="btn mic" type="button" id="hold" title="网页试玩版用打字；语音版接入灵矽语音。" aria-label="按住说话">${ICON.mic}</button>`;
   if (mode === 'speak') return `${hold}${lineForm('像模型一样回答这张卡', '确认')}<button class="btn ghost sm" type="button" id="hint">给我灵感</button>${drawer}`;
   if (mode === 'defense') return `${hold}${lineForm('甩一句锅，或直接点头像投票', '确认')}<p class="hint" id="note"></p>${drawer}`;
   if (mode === 'interrupt') return `${hold}${lineForm('打断这句，替自己辩一下', '打断')}<p class="hint" id="note"></p>${drawer}`;
