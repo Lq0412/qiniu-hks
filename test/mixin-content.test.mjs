@@ -4,10 +4,13 @@ import { readFileSync } from 'node:fs';
 import { ACCUSE_PROMPT, allCards, cardById, drawCards, replyFor, sceneById, SCENES } from '../mixin-bank.mjs';
 import { agentPrompt, openingLine, renderBrief, reportInstruction, stageDirection, toneFor } from '../mixin-prompts.mjs';
 import { HOST, PLAYER_ALIASES, ROLES, createRng, defaultLineup, pickAlias, pickLineup, relationshipLines, roleById, voiceOf } from '../mixin-roles.mjs';
+import { VOICE_CATALOG } from '../mixin-voice.mjs';
 
 test('roles are fictional, keep a voice slot, and can be dealt', () => {
   assert.equal(ROLES.length, 5);
-  assert.equal(HOST.voice.voiceId, null);
+  assert.equal(HOST.voice.voiceId, '4bdb867c07d54e119950b5bda44673a7');
+  assert.equal(HOST.voice.fallbackVoiceId, null);
+  assert.equal(HOST.voice.label, '典型播音女');
   assert.match(HOST.voice.description, /播音腔/);
   assert.equal(HOST.voice.rate, 'medium');
   assert.equal(HOST.voice.verified, false);
@@ -18,9 +21,18 @@ test('roles are fictional, keep a voice slot, and can be dealt', () => {
     baobao: /活泼/,
     xiaosi: /童声/,
   };
+  const expected = {
+    claudia: ['8fca6d5172fc4c309c2d16352ca8a9b3', 'b30165086267413f96643a803aed599f'],
+    astra: ['2e7965636b0d4472ae51e75f419dff41', null],
+    shensi: ['9d91653b2adf4aa9ad97e1c8f63fbda3', 'b38d4a6eb8f64c209fa6febfd7f91663'],
+    baobao: ['1965294143278125057', '2077603629237219330'],
+    xiaosi: ['91ccc0758b22473693dfa86c8e7e3fa3', null],
+  };
   for (const role of ROLES) {
-    assert.equal(role.voice.voiceId, role.id === 'shensi' ? 'b38d4a6eb8f64c209fa6febfd7f91663' : null);
-    assert.equal(role.voice.label, role.id === 'shensi' ? '深夜播客' : role.voice.label);
+    assert.equal(typeof role.voice.voiceId, 'string');
+    assert.equal(role.voice.voiceId, expected[role.id][0]);
+    assert.equal(role.voice.fallbackVoiceId, expected[role.id][1]);
+    assert.equal(role.voice.voiceId, VOICE_CATALOG[role.id].voiceId);
     assert.match(role.voice.description, described[role.id]);
     assert.equal(typeof role.voice.rate, 'string');
     assert.equal(role.voice.verified, false);
@@ -98,26 +110,36 @@ test('prompts keep the brief slot and can render every stage direction', () => {
   assert.equal(toneFor('hell'), '笃定');
   assert.equal(toneFor('missing'), '认真');
   assert.match(reportInstruction({ outcome: '潜伏成功', votes: '1/4', catcher: '包包', aiScore: 80, playerLines: ['原话'], titles: ['人形 Transformer'] }), /不得更改/);
-  for (const file of ['mixin-session.mjs', 'mixin-http.mjs', 'mixin-game.mjs', 'humanity.mjs', 'mixin-roles.mjs', 'mixin-prompts.mjs', 'scripts/sim-mixin.mjs']) {
+  for (const file of ['mixin-session.mjs', 'mixin-http.mjs', 'mixin-game.mjs', 'humanity.mjs', 'mixin-roles.mjs', 'mixin-prompts.mjs', 'mixin-voice.mjs', 'scripts/sim-mixin.mjs']) {
     const source = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
     assert.doesNotMatch(source, /getUserMedia|from '\.\/linx\.mjs'|new WebSocket/);
-    assert.doesNotMatch(source, /阿柿|阿梨|阿枣|阿桃|9d91653b2adf4aa9ad97e1c8f63fbda3/);
+    assert.doesNotMatch(source, /阿柿|阿梨|阿枣|阿桃/);
   }
   const architecture = readFileSync(new URL('../docs/architecture.md', import.meta.url), 'utf8');
-  assert.doesNotMatch(architecture, /阿柿|阿梨|阿枣|阿桃|9d91653b2adf4aa9ad97e1c8f63fbda3/);
-  assert.match(architecture, /b38d4a6eb8f64c209fa6febfd7f91663/);
-  assert.match(architecture, /深夜播客/);
+  assert.doesNotMatch(architecture, /阿柿|阿梨|阿枣|阿桃/);
+  assert.match(architecture, /8fca6d5172fc4c309c2d16352ca8a9b3/);
+  assert.match(architecture, /9d91653b2adf4aa9ad97e1c8f63fbda3/);
+  assert.match(architecture, /1965294143278125057/);
+  assert.match(architecture, /4bdb867c07d54e119950b5bda44673a7/);
+  assert.match(architecture, /角色id=音色id/);
   assert.match(architecture, /3\.0–3\.5/);
   assert.match(architecture, /\{\{counter_brief\}\}/);
+  assert.equal(Number(VOICE_CATALOG.baobao.voiceId).toString() === VOICE_CATALOG.baobao.voiceId, false);
+  assert.equal(Number(VOICE_CATALOG.baobao.fallbackVoiceId).toString() === VOICE_CATALOG.baobao.fallbackVoiceId, false);
   const previous = process.env.LINX_VOICE_IDS;
   delete process.env.LINX_VOICE_IDS;
   try {
-    assert.equal(voiceOf(roleById('shensi')).voiceId, 'b38d4a6eb8f64c209fa6febfd7f91663');
-    assert.equal(voiceOf(HOST).voiceId, null);
-    process.env.LINX_VOICE_IDS = '{"claudia":"override-id"}';
+    assert.equal(voiceOf(roleById('shensi')).voiceId, '9d91653b2adf4aa9ad97e1c8f63fbda3');
+    assert.equal(voiceOf(HOST).voiceId, '4bdb867c07d54e119950b5bda44673a7');
+    process.env.LINX_VOICE_IDS = 'claudia=override-id, baobao=1965294143278125057';
     assert.equal(voiceOf(roleById('claudia')).voiceId, 'override-id');
-    process.env.LINX_VOICE_IDS = 'not-json';
-    assert.equal(voiceOf(roleById('claudia')).voiceId, null);
+    assert.equal(typeof voiceOf(roleById('baobao')).voiceId, 'string');
+    assert.equal(voiceOf(roleById('baobao')).voiceId, '1965294143278125057');
+    assert.equal(voiceOf(roleById('astra')).voiceId, '2e7965636b0d4472ae51e75f419dff41');
+    process.env.LINX_VOICE_IDS = 'not-a-map';
+    assert.equal(voiceOf(roleById('claudia')).voiceId, '8fca6d5172fc4c309c2d16352ca8a9b3');
+    process.env.LINX_VOICE_IDS = 'claudia=';
+    assert.equal(voiceOf(roleById('claudia')).voiceId, '8fca6d5172fc4c309c2d16352ca8a9b3');
   } finally {
     if (previous == null) delete process.env.LINX_VOICE_IDS;
     else process.env.LINX_VOICE_IDS = previous;

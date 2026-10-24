@@ -8,10 +8,10 @@
 | --- | --- |
 | `mixin-game.mjs` | 对局状态机。身份、票型和胜负只在这里落账。露出 `stage`（与 `phase` 相同）和 `generation`。`enter` 失败会回滚；需要台词却没有台词时停在 `error`，避免空转。 |
 | `humanity.mjs` | 确定性人味分、难度票型、`judgeOutcome`。同样的输入得到同样的票。匹配前先做转写归一化。 |
-| `mixin-roles.mjs` | 虚构角色、关系梗、代号池、发牌。每个角色有 `voice`（描述和 `rate`）。深思哥的 `voiceId` 已在真机定为深夜播客 `b38d4a6eb8f64c209fa6febfd7f91663`。其余角色和群主的 `voiceId` 仍为空。运行时可用环境变量 `LINX_VOICE_IDS`（按角色 id 的 JSON）覆盖，非法 JSON 忽略。 |
+| `mixin-roles.mjs` | 虚构角色、关系梗、代号池、发牌。每个角色有 `voice`（描述和 `rate`），`voiceId` 来自音色表。 |
 | `mixin-bank.mjs` | 三个场景、18 张话题卡、指控提示。卡上的回复不超过 40 字。 |
 | `mixin-prompts.mjs` | `agentPrompt`（占位符是 `{{counter_brief}}`，与控制台提示一致）、开场白、`renderBrief`、舞台指令。纯函数，不假设平台怎么投递。 |
-| `mixin-voice.mjs` | 座位发言接口。调用方只说「这个座位用这份音色说这段指令」。默认 8 秒超时，超时、抛错或空字符串都改用 `fallbackText`。 |
+| `mixin-voice.mjs` | 座位发言接口，以及按角色 id 索引的音色表。默认 8 秒超时，超时、抛错或空字符串都改用 `fallbackText`。 |
 | `mixin-session.mjs` | 文字会话。`playScript` / `runUntilResult` 跑完整局。`restart` 只在结局阶段重开。 |
 | `mixin-http.mjs` | `/api/mixin`。和旧的 `/api/game`、`/voice` 分开，cookie 用 `mixin`。 |
 | `scripts/sim-mixin.mjs` | `npm run sim`。打印阶段、票型和结局字段。 |
@@ -133,7 +133,8 @@ HTTP 建局只接受 `demo`、`difficulty`、`seed`、`sceneId`、`cardIds`、`r
 - AI 回合开始的 p90 大约 1.85 秒。前端用「思考」音效和字幕盖住。每局先走一个热身回合。
 - 群主音色的首音要 3.0–3.5 秒，所以群主的固定台词（开场、规则、串场）都要预合成，作为开口前的退路。这一步只记下这件事，不生成音频。
 - 灵矽服务端有 TTS 缓存：同一句话用同一音色，第二次合成的音频与第一次完全一致。缓存怎么用，留给语音调度。
-- 深思哥使用真机选定的深夜播客 `b38d4a6eb8f64c209fa6febfd7f91663`。其余角色仍只有音色描述和 `rate`，`voiceId` 为空，等团队补进 `LINX_VOICE_IDS` 或角色表。
+- 音色 ID 写在 `mixin-voice.mjs`，按角色 id 索引，全部是字符串（纯数字 ID 不能转成数字）。群主·零号用典型播音女 `4bdb867c07d54e119950b5bda44673a7`，一局里固定不换。柯老师用温暖治愈女 `8fca6d5172fc4c309c2d16352ca8a9b3`，备选积极知性女 `b30165086267413f96643a803aed599f`。阿斯哥用沉稳质感男 `2e7965636b0d4472ae51e75f419dff41`。深思哥用磁性低音男 `9d91653b2adf4aa9ad97e1c8f63fbda3`，备选深夜播客 `b38d4a6eb8f64c209fa6febfd7f91663`。包包用调皮公主 `1965294143278125057`，备选活泼女孩 2.0 `2077603629237219330`。小四用稚气呆板女 `91ccc0758b22473693dfa86c8e7e3fa3`。备选只记在表里，本步失败时不自动换。
+- 环境变量 `LINX_VOICE_IDS` 仍可覆盖。格式是 `角色id=音色id`，多项用英文逗号分隔，例如 `claudia=8fca6d5172fc4c309c2d16352ca8a9b3,baobao=1965294143278125057`。等号两侧可以有空格。值按字符串读取。缺等号或空 id 的项忽略，没写到的角色继续用表里的默认 id。
 
 当前指控仍是舞台指令要求模型引用原话，兜底台词是服务端模板，落地时记下实际说出的字，报告文案另做逐字核对。语音调度应改成服务端先套好已经包含原话的「【台词】」再送 detect，这样引用必然逐字。本步不改这条路径。
 

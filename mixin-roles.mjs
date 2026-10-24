@@ -1,6 +1,19 @@
 // 谁是人类的虚构角色。名字只借风格，不点真实产品。
-// 深思哥的音色已在真机选定。其余角色的 voiceId 留空，运行时用 LINX_VOICE_IDS 覆盖。
+// 音色 ID 在 mixin-voice.mjs，按角色 id 索引。LINX_VOICE_IDS 用「角色id=音色id」逗号分隔覆盖。
 // 群主音色首音约 3.0–3.5 秒，开场、规则和串场要预合成。灵矽对同一句话、同一音色有 TTS 缓存，第二次音频与第一次完全一致。这两件事先记在这里，实现留给语音调度。
+
+import { VOICE_CATALOG, voiceIdOverrides } from './mixin-voice.mjs';
+
+function roleVoice(id, extra) {
+  const catalog = VOICE_CATALOG[id];
+  return {
+    voiceId: catalog.voiceId,
+    fallbackVoiceId: catalog.fallbackVoiceId,
+    label: catalog.label,
+    verified: false,
+    ...extra,
+  };
+}
 
 export const HOST = {
   id: 'host',
@@ -10,7 +23,7 @@ export const HOST = {
   personality: '冷幽默综艺主持，不站队',
   catchphrases: ['下一位，请加载'],
   intro: '',
-  voice: { voiceId: null, label: '播音腔', description: '播音腔，固定不换', rate: 'medium', pitch: 'medium', emotion: 'neutral', verified: false },
+  voice: roleVoice('host', { description: '播音腔，固定不换', rate: 'medium', pitch: 'medium', emotion: 'neutral' }),
 };
 
 export const ROLES = [
@@ -21,7 +34,7 @@ export const ROLES = [
     personality: '温柔、谨慎、什么都要提醒风险',
     catchphrases: ['需要说明的是', '这只是我的看法，请以实际情况为准'],
     intro: '大家好，我是柯老师。需要说明的是，我很安全。',
-    voice: { voiceId: null, label: '知性温柔女声', description: '知性温柔女声，语速稍慢', rate: 'slow', pitch: 'medium', emotion: 'calm', verified: false },
+    voice: roleVoice('claudia', { description: '知性温柔女声，语速稍慢', rate: 'slow', pitch: 'medium', emotion: 'calm' }),
   },
   {
     id: 'astra',
@@ -30,7 +43,7 @@ export const ROLES = [
     personality: '自信爆棚、凡事拆三步、爱画大饼',
     catchphrases: ['我给你拆成三步', '这个格局要打开'],
     intro: '阿斯哥，格局打开，今晚我负责带飞。',
-    voice: { voiceId: null, label: '沉稳质感男声', description: '沉稳有质感的男声，语速稍快', rate: 'fast', pitch: 'medium', emotion: 'confident', verified: false },
+    voice: roleVoice('astra', { description: '沉稳有质感的男声，语速稍快', rate: 'fast', pitch: 'medium', emotion: 'confident' }),
   },
   {
     id: 'shensi',
@@ -39,7 +52,7 @@ export const ROLES = [
     personality: '慢半拍、先盘约束、爱报思考时长',
     catchphrases: ['嗯……已深度思考 37 秒', '先把约束盘清楚'],
     intro: '嗯……已深度思考 12 秒，我是深思哥。',
-    voice: { voiceId: 'b38d4a6eb8f64c209fa6febfd7f91663', label: '深夜播客', description: '低沉慢速男声', rate: 'slow', pitch: 'low', emotion: 'thoughtful', verified: false },
+    voice: roleVoice('shensi', { description: '低沉慢速男声', rate: 'slow', pitch: 'low', emotion: 'thoughtful' }),
   },
   {
     id: 'baobao',
@@ -48,7 +61,7 @@ export const ROLES = [
     personality: '接地气、像群里靠谱朋友、爱叫宝子',
     catchphrases: ['宝子，这事儿简单', '家人们谁懂啊'],
     intro: '宝子们好，包包在线，人类别想跑。',
-    voice: { voiceId: null, label: '活泼女声', description: '调皮或活泼的女声', rate: 'fast', pitch: 'high', emotion: 'playful', verified: false },
+    voice: roleVoice('baobao', { description: '调皮或活泼的女声', rate: 'fast', pitch: 'high', emotion: 'playful' }),
   },
   {
     id: 'xiaosi',
@@ -57,7 +70,7 @@ export const ROLES = [
     personality: '话短、自信地胡说、常被全桌嫌弃',
     catchphrases: ['收到！其实没懂', '参数少，但我快'],
     intro: '收到！其实没懂。参数少，但我快。',
-    voice: { voiceId: null, label: '童声', description: '童声，语速偏快', rate: 'fast', pitch: 'high', emotion: 'chipper', verified: false },
+    voice: roleVoice('xiaosi', { description: '童声，语速偏快', rate: 'fast', pitch: 'high', emotion: 'chipper' }),
   },
 ];
 
@@ -72,13 +85,15 @@ export const RIVAL = {
   xiaosi: 'astra',
 };
 
-const PLAYER_VOICE = { voiceId: null, label: '玩家', description: '玩家自己的声音', rate: 'medium', pitch: 'medium', emotion: 'neutral', verified: false };
+const PLAYER_VOICE = { voiceId: null, fallbackVoiceId: null, label: '玩家', description: '玩家自己的声音', rate: 'medium', pitch: 'medium', emotion: 'neutral', verified: false };
 
 const SEATABLE_IDS = new Set(ROLES.map(role => role.id));
 
 export function voiceOf(role) {
+  const base = role.voice.voiceId;
   const voice = {
-    voiceId: typeof role.voice.voiceId === 'string' && role.voice.voiceId.trim() ? role.voice.voiceId.trim() : null,
+    voiceId: typeof base === 'string' && base.trim() ? base.trim() : null,
+    fallbackVoiceId: typeof role.voice.fallbackVoiceId === 'string' && role.voice.fallbackVoiceId.trim() ? role.voice.fallbackVoiceId.trim() : null,
     label: role.voice.label,
     description: role.voice.description,
     rate: role.voice.rate,
@@ -86,16 +101,8 @@ export function voiceOf(role) {
     emotion: role.voice.emotion,
     verified: false,
   };
-  const raw = process.env.LINX_VOICE_IDS;
-  if (typeof raw !== 'string' || !raw.trim()) return voice;
-  let map;
-  try { map = JSON.parse(raw); } catch { return voice; }
-  if (!map || typeof map !== 'object' || Array.isArray(map)) return voice;
-  const id = map[role.id];
-  if (typeof id !== 'string') return voice;
-  const trimmed = id.trim();
-  if (!trimmed || /[\r\n]/.test(trimmed)) return voice;
-  voice.voiceId = trimmed;
+  const override = voiceIdOverrides()[role.id];
+  if (typeof override === 'string') voice.voiceId = override;
   return voice;
 }
 
