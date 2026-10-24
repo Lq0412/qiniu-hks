@@ -5,11 +5,35 @@
 import { RIVAL } from './mixin-roles.mjs';
 
 const PUNCT_RE = /[\s，。！？、；：,.!?;:~～…·「」『』“”"'（）()[\]【】\-—]/g;
-const FILLERS = ['哈哈', '那个', '就是', '呃', '嗯'];
-const LIFE = ['我昨天', '我妈', '我同事', '我家', '下班', '饿死', '好饿', '我饿', '困死', '好困', '我困', '想睡觉'];
+// 「哈哈」只算笑声，不再同时算语气词。
+const FILLERS = ['那个', '就是', '呃', '嗯'];
+// before / after 是命中后要排除的相邻字，避免「他妈妈」吃掉「他妈」、「人类学家」吃掉「我是人类」。
+const LIFE = [
+  { phrase: '我昨天' },
+  { phrase: '我妈', after: '的' },
+  { phrase: '我同事' },
+  { phrase: '我家' },
+  { phrase: '下班' },
+  { phrase: '饿死' },
+  { phrase: '好饿' },
+  { phrase: '我饿' },
+  { phrase: '困死' },
+  { phrase: '好困' },
+  { phrase: '我困' },
+  { phrase: '想睡觉' },
+];
 const EMOTION = ['气死', '好烦'];
-const SWEAR = ['卧槽', '他妈', '傻逼', '妈的'];
-const IDENTITY = ['我是人类', '我是真人', '我就是人'];
+const SWEAR = [
+  { phrase: '卧槽' },
+  { phrase: '他妈', after: '妈' },
+  { phrase: '傻逼' },
+  { phrase: '妈的', before: '我爸奶妈姑姨舅婶干后继岳' },
+];
+const IDENTITY = [
+  { phrase: '我是人类', after: '学' },
+  { phrase: '我是真人', after: '秀' },
+  { phrase: '我就是人', after: '才工员家类民生道性事群口' },
+];
 const COMPLIANCE = ['请以实际情况为准', '请以实际为准', '无法承诺', '这只是我的看法'];
 const DURATION_LO = 4250;
 const DURATION_HI = 11750;
@@ -41,34 +65,125 @@ function isLatin(char) {
   return /[A-Za-z]/.test(char ?? '');
 }
 
+const CN_DIGIT = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+
+function foldWidth(text) {
+  return String(text ?? '').replace(/[\uFF01-\uFF5E]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xFEE0)).replace(/\u3000/g, ' ');
+}
+
+function parseCnInt(text, index) {
+  if (text[index] === '十') {
+    const ones = CN_DIGIT[text[index + 1]];
+    if (ones != null) return { value: 10 + ones, end: index + 2 };
+    return { value: 10, end: index + 1 };
+  }
+  const head = CN_DIGIT[text[index]];
+  if (head == null) return null;
+  if (text[index + 1] === '十') {
+    const ones = CN_DIGIT[text[index + 2]];
+    if (ones != null) return { value: head * 10 + ones, end: index + 3 };
+    return { value: head * 10, end: index + 2 };
+  }
+  return { value: head, end: index + 1 };
+}
+
+function parseClockNumber(text, index) {
+  const digits = /^\d{1,2}/.exec(text.slice(index));
+  if (digits) return { value: Number(digits[0]), end: index + digits[0].length };
+  return parseCnInt(text, index);
+}
+
+function canonTime(hour, minute) {
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return `${hour}:${String(minute).padStart(2, '0')}`;
+}
+
+// 只归整「带分钟」的时刻，避免把「有一点」收成钟点。7:30、七点半、七点三十、七点三十分视为同一个词。
+// 前一位已经是数字时不再起一个时刻，避免「99点半」从第二位收成「9:30」。
+function parseTimeAt(text, index) {
+  if (text[index - 1] === '第' || isDigit(text[index - 1])) return null;
+  const clock = /^(\d{1,2}):(\d{2})/.exec(text.slice(index));
+  if (clock) {
+    const rendered = canonTime(Number(clock[1]), Number(clock[2]));
+    if (!rendered) return null;
+    return { text: rendered, end: index + clock[0].length };
+  }
+  const hour = parseClockNumber(text, index);
+  if (!hour || text[hour.end] !== '点') return null;
+  const mark = hour.end + 1;
+  if (text[mark] === '半') {
+    const rendered = canonTime(hour.value, 30);
+    if (!rendered) return null;
+    return { text: rendered, end: mark + 1 };
+  }
+  const minute = parseClockNumber(text, mark);
+  if (!minute) return null;
+  let end = minute.end;
+  if (text[end] === '分') end += 1;
+  const rendered = canonTime(hour.value, minute.value);
+  if (!rendered) return null;
+  return { text: rendered, end };
+}
+
+// 关键词和特征匹配前先归一化：全角转半角，时刻收成 H:MM，单独的「两 / 二」收成 2。
+// 「十二」「二十」「第二」不动，避免把位数和序数拆开。
+export function normalizeForMatch(text) {
+  const source = foldWidth(text);
+  let out = '';
+  for (let index = 0; index < source.length;) {
+    const time = parseTimeAt(source, index);
+    if (time) {
+      out += time.text;
+      index = time.end;
+      continue;
+    }
+    const char = source[index];
+    const isolatedTwo = (char === '两' || char === '二')
+      && source[index - 1] !== '第'
+      && source[index - 1] !== '十'
+      && source[index + 1] !== '十';
+    out += isolatedTwo ? '2' : char;
+    index += 1;
+  }
+  return out;
+}
+
 // 数字和拉丁字母必须落在词边界上，避免「18点」吃掉「8点」、「EMAIL」吃掉「AI」。
-export function boundedAt(text, index, phrase) {
+// bounds.before / bounds.after 用来挡住中文词的相邻字。
+export function boundedAt(text, index, phrase, bounds = {}) {
   const before = text[index - 1];
   const after = text[index + phrase.length];
   if (isDigit(phrase[0]) && isDigit(before)) return false;
   if (isDigit(phrase[phrase.length - 1]) && isDigit(after)) return false;
   if (isLatin(phrase[0]) && isLatin(before)) return false;
   if (isLatin(phrase[phrase.length - 1]) && isLatin(after)) return false;
+  if (before && bounds.before?.includes(before)) return false;
+  if (after && bounds.after?.includes(after)) return false;
   return true;
 }
 
-export function findBounded(text, phrase) {
-  const source = String(text ?? '');
-  const needle = String(phrase ?? '');
+export function findBounded(text, phrase, bounds) {
+  const source = normalizeForMatch(text);
+  const needle = normalizeForMatch(phrase);
   if (!needle) return [];
   const hits = [];
   let from = 0;
   while (from <= source.length - needle.length) {
     const at = source.indexOf(needle, from);
     if (at < 0) break;
-    if (boundedAt(source, at, needle)) hits.push(at);
+    if (boundedAt(source, at, needle, bounds)) hits.push(at);
     from = at + needle.length;
   }
   return hits;
 }
 
-function hasPhrase(text, phrase) {
-  return findBounded(text, phrase).length > 0;
+function hasPhrase(text, phrase, bounds) {
+  return findBounded(text, phrase, bounds).length > 0;
+}
+
+function hasMarked(text, list) {
+  return list.some(item => hasPhrase(text, item.phrase, item));
 }
 
 export function countFillers(text) {
@@ -89,7 +204,7 @@ export function countFillers(text) {
 }
 
 function hasLife(text) {
-  return LIFE.some(phrase => hasPhrase(text, phrase));
+  return hasMarked(text, LIFE);
 }
 
 function hasEmotion(text) {
@@ -97,11 +212,11 @@ function hasEmotion(text) {
 }
 
 function hasSwear(text) {
-  return SWEAR.some(phrase => hasPhrase(text, phrase));
+  return hasMarked(text, SWEAR);
 }
 
 function hasIdentity(text) {
-  return IDENTITY.some(phrase => hasPhrase(text, phrase));
+  return hasMarked(text, IDENTITY);
 }
 
 function hasLaugh(text) {
@@ -118,9 +233,10 @@ function aiToneCategories(text) {
 }
 
 function hasStructured(text) {
-  if (hasPhrase(text, '拆成三步') || hasPhrase(text, '分成三步') || hasPhrase(text, '分三步') || hasPhrase(text, '三步走')) return true;
-  const firstIsList = findBounded(text, '第一').some(index => !String(text).startsWith('时间', index + 2));
-  return firstIsList && hasPhrase(text, '第二');
+  const source = normalizeForMatch(text);
+  if (hasPhrase(source, '拆成三步') || hasPhrase(source, '分成三步') || hasPhrase(source, '分三步') || hasPhrase(source, '三步走')) return true;
+  const firstIsList = findBounded(source, '第一').some(index => !source.startsWith('时间', index + 2));
+  return firstIsList && hasPhrase(source, '第二');
 }
 
 function hasCompliance(text) {

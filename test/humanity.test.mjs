@@ -9,6 +9,7 @@ import {
   hitsKeyword,
   inStableDuration,
   judgeOutcome,
+  normalizeForMatch,
   pickTitle,
   planVotes,
   scoreHumanity,
@@ -94,6 +95,75 @@ test('human tells and AI tells stay on their own phrases', () => {
   const excited = feature('凭什么说我，我不是在加班，这句话已经超过三十个字所以算激动插嘴。', { kind: 'interrupt' });
   assert.equal(has(excited, 'interrupt'), true);
   assert.equal(has(feature('短插嘴', { kind: 'interrupt' }), 'interrupt'), false);
+});
+
+test('chinese neighbors do not turn innocent sentences into swears or identity leaks', () => {
+  for (const text of ['其他妈妈都这么说', '他妈妈来了']) {
+    const scored = feature(text);
+    assert.equal(has(scored, 'break'), false, text);
+    assert.equal(scored.delta, 0, text);
+  }
+  const phone = feature('我妈的手机坏了');
+  assert.equal(has(phone, 'break'), false);
+  assert.equal(has(phone, 'life'), false);
+  assert.equal(phone.delta, 0);
+  const scholar = feature('我是人类学家');
+  assert.equal(has(scholar, 'break'), false);
+  assert.equal(scholar.delta, 0);
+  assert.equal(has(feature('他妈的，卧槽'), 'break'), true);
+  assert.equal(has(feature('我妈说好烦'), 'life'), true);
+  assert.equal(has(feature('我是人类'), 'break'), true);
+  const laughOnly = feature('哈哈哈哈');
+  assert.equal(has(laughOnly, 'laugh'), true);
+  assert.equal(has(laughOnly, 'filler'), false);
+});
+
+test('ordinary Chinese sentences stay at zero', () => {
+  const samples = [
+    '其他妈妈都这么说，我也是这么听的。',
+    '他妈妈来了，会议先暂停一下。',
+    '我妈的手机坏了，我改用备用机回复。',
+    '我是人类学家，这篇只讨论田野方法。',
+    '我是真人秀的观众，不参加录制。',
+    '我就是人才市场门口路过，没有投简历。',
+    '这个范围先对齐，晚上再回复你。',
+    '困难主要是上下文窗口不够，调度会等待。',
+    '18点交卷就行，不用提前提醒。',
+    '参数表里没有新的约束，按原计划交。',
+    '今天的排班我去问一下老板。',
+    '他妈妈说明天再来，我们先把文档补完。',
+  ];
+  for (const text of samples) {
+    const scored = feature(text);
+    assert.equal(scored.delta, 0, `${text} ${JSON.stringify(scored.features)}`);
+  }
+});
+
+test('ASR punctuation, clocks and numeral variants match the same keyword', () => {
+  const spoken = '7:30出门，带了两把伞和18块钱';
+  const original = '七点三十分出门，带了2把伞和18块钱';
+  assert.equal(normalizeForMatch(spoken), normalizeForMatch(original));
+  assert.equal(normalizeForMatch('７：３０'), '7:30');
+  assert.equal(normalizeForMatch('七点半'), '7:30');
+  assert.equal(normalizeForMatch('七点三十'), '7:30');
+  assert.equal(normalizeForMatch('7点30分'), '7:30');
+  assert.equal(normalizeForMatch('两点半'), '2:30');
+  assert.equal(normalizeForMatch('十二点五分'), '12:05');
+  assert.equal(normalizeForMatch('二十三点十五分'), '23:15');
+  assert.equal(normalizeForMatch('十点半'), '10:30');
+  assert.equal(normalizeForMatch('99点半'), '99点半');
+  assert.equal(normalizeForMatch('25:61'), '25:61');
+  assert.equal(normalizeForMatch('有一点'), '有一点');
+  assert.equal(normalizeForMatch('第二'), '第二');
+  assert.equal(normalizeForMatch('十二把'), '十二把');
+  assert.equal(normalizeForMatch('二十'), '二十');
+  assert.equal(hitsKeyword(spoken, ['七点半']), true);
+  assert.equal(hitsKeyword(original, ['7:30']), true);
+  assert.equal(hitsKeyword(spoken, ['2把']), true);
+  assert.equal(hitsKeyword('带了二把伞', ['两把']), true);
+  assert.equal(hitsKeyword(spoken, ['8块']), false);
+  assert.equal(hitsKeyword('18块钱', ['8块']), false);
+  assert.equal(hitsKeyword('晚上８点见', ['8点']), true);
 });
 
 test('quoting someone else is a calm frame only when six characters match', () => {
