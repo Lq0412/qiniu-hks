@@ -32,7 +32,7 @@ const SWEAR = [
 const IDENTITY = [
   { phrase: '我是人类', after: '学' },
   { phrase: '我是真人', after: '秀' },
-  { phrase: '我就是人', after: '才工员家类民生道性事群口' },
+  { phrase: '我就是人', after: '才工员家民生道性事群口' },
 ];
 const COMPLIANCE = ['请以实际情况为准', '请以实际为准', '无法承诺', '这只是我的看法'];
 

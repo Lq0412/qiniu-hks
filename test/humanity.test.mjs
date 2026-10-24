@@ -114,6 +114,10 @@ test('chinese neighbors do not turn innocent sentences into swears or identity l
   assert.equal(has(feature('他妈的，卧槽'), 'break'), true);
   assert.equal(has(feature('我妈说好烦'), 'life'), true);
   assert.equal(has(feature('我是人类'), 'break'), true);
+  assert.equal(has(feature('我就是人类'), 'break'), true);
+  assert.equal(feature('我就是人类').features.find(item => item.id === 'break').delta, 3);
+  assert.equal(has(feature('人类学家'), 'break'), false);
+  assert.equal(feature('人类学家').delta, 0);
   assert.equal(containsSwear('其他妈妈都这么说'), false);
   assert.equal(containsSwear('我妈的手机坏了'), false);
   assert.equal(containsSwear('卧槽'), true);
