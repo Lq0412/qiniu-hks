@@ -196,13 +196,29 @@ export function tableSeats(game, options) {
   return seats;
 }
 
+export function subtitleSize(text) {
+  const length = [...String(text ?? '')].length;
+  if (length > 80) return 'long';
+  if (length > 36) return 'medium';
+  return 'short';
+}
+
 export function subtitleModel(game, { thinking = false } = {}) {
   if (thinking && game?.cue) {
-    return { name: game.cue.name || HOST_NAME, seat: game.cue.seat, text: '思考中…', thinking: true };
+    return { name: game.cue.name || HOST_NAME, seat: game.cue.seat, text: '思考中…', thinking: true, size: 'short' };
+  }
+  if (game?.pending && ['round_player', 'defense'].includes(game.phase)) {
+    return { name: game.playerAlias || '五号', seat: game.playerSeat ?? 5, text: game.pending.text, thinking: false, size: subtitleSize(game.pending.text) };
+  }
+  if (!thinking && game && ['round_player', 'defense'].includes(game.phase) && !game.cue) {
+    return { name: game.playerAlias || '五号', seat: game.playerSeat ?? 5, text: game.note || '轮到你了', thinking: false, size: subtitleSize(game.note) };
+  }
+  if (!thinking && game?.phase === 'vote' && !game.cue && game.playerVote == null) {
+    return { name: HOST_NAME, seat: 0, text: '投票。把票投给一个模型。', thinking: false, size: 'short' };
   }
   const line = game?.dialogue?.length ? game.dialogue[game.dialogue.length - 1] : null;
-  if (line) return { name: line.name, seat: line.seat, text: line.text, thinking: false };
-  return { name: HOST_NAME, seat: 0, text: game?.note || '等待开局', thinking: false };
+  if (line) return { name: line.name, seat: line.seat, text: line.text, thinking: false, size: subtitleSize(line.text) };
+  return { name: HOST_NAME, seat: 0, text: game?.note || '等待开局', thinking: false, size: subtitleSize(game?.note) };
 }
 
 export function topicModel(game) {
@@ -240,17 +256,20 @@ export function dockMode(game) {
   return 'listen';
 }
 
-export function readBeat(kind) {
-  if (kind === 'host_open' || kind === 'reveal') return 2600;
-  if (kind === 'accuse' || kind === 'rebuttal' || kind === 'vote' || kind === 'host_card') return 2000;
-  if (kind === 'intro' || kind === 'answer' || kind === 'wrap' || kind === 'speak' || kind === 'defense') return 1400;
-  return 900;
+export function readBeat(kind, text = '') {
+  let base = 900;
+  if (kind === 'host_open' || kind === 'reveal') base = 2600;
+  else if (kind === 'accuse' || kind === 'rebuttal') base = 2400;
+  else if (kind === 'vote' || kind === 'host_card') base = 1800;
+  else if (['intro', 'answer', 'wrap', 'speak', 'defense', 'interrupt'].includes(kind)) base = 1400;
+  const extra = Math.min(4200, Math.max(0, [...String(text ?? '')].length - 28) * 45);
+  return base + extra;
 }
 
-export function autoIntent(game, { holdRead = false, readScale = 1, previousKind = '' } = {}) {
+export function autoIntent(game, { holdRead = false, readScale = 1, previousKind = '', previousText = '' } = {}) {
   if (!game || game.phase === 'lobby' || game.phase === 'result' || game.phase === 'error') return { action: 'idle' };
   if (game.cue) {
-    const delay = holdRead ? Math.round(readBeat(previousKind || game.cue.kind) * readScale) : 0;
+    const delay = holdRead ? Math.round(readBeat(previousKind || game.cue.kind, previousText) * readScale) : 0;
     return { action: 'step', delay };
   }
   return { action: 'tick', ms: TICK_MS, delay: Math.round(TICK_MS * Math.max(readScale, 0.2)) };

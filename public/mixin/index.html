@@ -3,15 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07080d">
   <title>谁是人类</title>
   <meta name="description" content="一桌 AI，只有你是人。装成模型，别被投票揪出来。">
   <link rel="stylesheet" href="/mixin/style.css">
 </head>
 <body>
-  <main class="boot">
-    <p class="eyebrow">TEXT MODE · 文字局</p>
-    <h1>谁是人类</h1>
-    <p class="tagline">一桌 AI，只有你是人。</p>
-  </main>
+  <div id="app">
+    <main class="boot">
+      <p class="eyebrow">TEXT MODE · 文字局</p>
+      <h1>谁是人类</h1>
+      <p class="tagline">一桌 AI，只有你是人。</p>
+    </main>
+  </div>
+  <div id="toast" role="alert" hidden></div>
+  <script type="module" src="/mixin/app.js"></script>
 </body>
 </html>
