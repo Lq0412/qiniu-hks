@@ -610,6 +610,7 @@ function beginRoundAi(game, now) {
   game.round += 1;
   game.emptyRetries = 0;
   game.hintReleased = false;
+  game.hintTaken = false;
   game.nudged = false;
   game.stallMark = null;
   game.pending = null;

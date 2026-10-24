@@ -237,6 +237,20 @@ test('player revisions, retries, hints and timeouts cannot be skipped by an old 
   asked.confirm();
   assert.equal(asked.game.playerLines.at(-1).usedHint, true);
 
+  const again = demoSession();
+  await reach(again, 'round_player', 1);
+  assert.equal(again.hint().accepted, true);
+  again.say(caughtScript.rounds[0]);
+  again.confirm();
+  assert.equal(again.game.playerLines.at(-1).usedHint, true);
+  await reach(again, 'round_player', 2);
+  assert.equal(again.game.hintTaken, false);
+  again.say(caughtScript.rounds[1]);
+  again.confirm();
+  assert.equal(again.game.playerLines.at(-1).usedHint, false);
+  const finished = await drive(again, caughtScript, 'result');
+  assert.equal(finished.report.stats.hints, 1);
+
   const late = demoSession();
   await reach(late, 'round_player', 1);
   late.say('感谢老板，算力减半，我的废话也会减半。');
