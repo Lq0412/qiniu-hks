@@ -33,6 +33,7 @@ jobs:
             sed -n -E '/tests +[0-9]+$/,/end of coverage report/p' rules.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          cat "$GITHUB_STEP_SUMMARY"
       - name: Upload test logs
         if: always()
         uses: actions/upload-artifact@v4
