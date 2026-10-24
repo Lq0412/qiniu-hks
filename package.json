@@ -1,0 +1,33 @@
+{
+  "name": "today-not-open",
+  "version": "1.0.0",
+  "description": "今日不办 · Linx语音办事闯关",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check server.mjs && node --check linx.mjs && node --check game.mjs && node --check public/app.js && node --check public/audio.js && node --check public/recorder.js",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=*.mjs --test-coverage-lines=80 test/*.test.mjs",
+    "test:rules": "node --test --experimental-test-coverage --test-coverage-include=game.mjs --test-coverage-branches=90 test/game.test.mjs",
+    "smoke:linx": "node scripts/smoke-linx.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lq0412/qiniu-hks.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/Lq0412/qiniu-hks/issues"
+  },
+  "homepage": "https://github.com/Lq0412/qiniu-hks#readme",
+  "dependencies": {
+    "opusscript": "^0.1.1",
+    "ws": "^8.22.0"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  }
+}
