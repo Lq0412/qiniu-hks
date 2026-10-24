@@ -173,6 +173,19 @@ test('player braces are stripped and do not freeze the ending', async () => {
   }
 });
 
+test('the spoken humanity score is truncated and never negative', () => {
+  const low = renderEnding({
+    outcome: '潜伏成功',
+    humanScore: -8,
+    playerVotes: 1,
+    voters: ['阿斯哥'],
+    quote: '作为一个语言模型',
+  }, { templateId: 'S2' });
+  assert.equal(low.text.includes('-8'), false);
+  assert.match(low.text, /人味分 0/);
+  assert.match(endingOf({ humanScore: 6.9 }, { templateId: 'C1' }).text, /人味分是 6 分/);
+});
+
 test('the oral script stays out of the public view until reveal and does not change the title', async () => {
   const session = createTextSession({ demo: true, seed: 1, random: () => 0 });
   session.start();

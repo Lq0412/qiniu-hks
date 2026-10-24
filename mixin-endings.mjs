@@ -98,7 +98,7 @@ export function renderEnding(input = {}, options = {}) {
   const picked = chooseTemplate(eligible, recentIds, random, options.templateId);
   assertTemplate(picked);
   const pole = outcome === '被识破' ? 'human' : 'ai';
-  const score = Number.isFinite(input.humanScore) ? Math.trunc(input.humanScore) : 0;
+  const score = Number.isFinite(input.humanScore) ? Math.max(0, Math.trunc(input.humanScore)) : 0;
   const text = picked.text
     .replaceAll('{人味分}', String(score))
     .replaceAll('{投票者}', voterText(picked.id, input.voters))
