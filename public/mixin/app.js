@@ -349,7 +349,10 @@ async function interrupt() {
 }
 
 async function vote(seat) {
-  await userAction(async () => { await call('vote', { seat }); });
+  await userAction(async () => {
+    const result = await call('vote', { seat });
+    if (result.accepted === false) toast('这票未记入：投票已结束或当前不能投票。');
+  });
 }
 
 async function finishCue() {
@@ -599,8 +602,11 @@ function paintDock() {
   for (const button of el.querySelectorAll('[data-vote]')) {
     button.classList.toggle('selected', Number(button.dataset.vote) === state.game.playerVote);
   }
-  const mine = el.querySelector('#mine');
-  if (mine) mine.textContent = state.game.playerVote ? `你投了 ${state.game.playerVote} 号` : '你还没投票';
+  const mine = el.querySelector('#mine') || (['vote', 'defense'].includes(mode) && state.game.playerVote != null ? note : null);
+  if (mine) {
+    const target = state.game.seats.find(seat => seat.seat === state.game.playerVote);
+    mine.textContent = target ? `✓ 已投 ${target.name}（${target.seat} 号）` : state.game.voteLocked ? '投票已结束，你未投票' : '你还没投票';
+  }
   let home = el.querySelector('#home');
   if (state.mismatch && !home) {
     home = document.createElement('button');
@@ -618,7 +624,7 @@ function dockHtml(mode) {
   if (mode === 'defense') return `${dockClock('秒后进入投票')}${lineForm('甩一句锅，或只投票', '确认')}${voteRow()}${toolRow(false)}`;
   if (mode === 'interrupt') return `${lineForm('打断这句，替自己辩一下', '打断')}${toolRow(false)}<p class="note" id="note"></p>`;
   if (mode === 'vote') return `${dockClock('秒后开始念票')}<p class="note" id="note"></p>${voteRow()}`;
-  if (mode === 'ballots') return `<div class="dock-head"><p class="note" id="note"></p><p class="fine" id="mine"></p></div>`;
+  if (mode === 'ballots') return `<div class="dock-head"><p class="note" id="note"></p><p class="fine" id="mine" role="status"></p></div>`;
   return `<div class="dock-head"><p class="note" id="note"></p></div>`;
 }
 

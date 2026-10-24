@@ -518,7 +518,7 @@ test('defense can time out straight into the vote', async () => {
   session.tick(TIMEOUTS.defense);
   assert.equal(session.game.phase, 'vote');
   assert.equal(session.game.defenseText, '');
-  session.tick(TIMEOUTS.voteLock);
+  session.tick(TIMEOUTS.textVoteLock);
   assert.equal(session.game.announced, true);
   assert.equal(session.game.playerVote, null);
   assert.equal(judgeOutcome({ tally: session.game.votePlan.tally, playerVote: null }).scapegoatMaster, false);
@@ -560,4 +560,27 @@ test('scores and the full ballot stay hidden until each vote is spoken', async (
   assert.equal(typeof session.view().humanScore, 'number');
   assert.ok(session.view().script.length > 0);
   assert.ok(session.view().votes.votes.length > 1);
+});
+
+
+test('voice voting retains its original lock and phase deadlines', async () => {
+  const session = demoSession();
+  await drive(session, caughtScript, 'defense');
+  session.game.mode = 'voice';
+  session.tick(TIMEOUTS.defense);
+  assert.equal(session.game.deadlineAt - session.now(), TIMEOUTS.vote);
+  session.tick(TIMEOUTS.voteLock - 1);
+  assert.equal(session.game.voteLocked, false);
+  session.tick(1);
+  assert.equal(session.game.voteLocked, true);
+});
+
+
+test('player countdown copy matches the actual twenty-second deadline', async () => {
+  const session = demoSession();
+  await drive(session, caughtScript, 'round_player');
+  const game = session.view();
+  const seconds = (game.deadlineAt - session.now()) / 1000;
+  assert.equal(seconds, 20);
+  assert.equal(game.note, `轮到你了，${seconds} 秒。`);
 });

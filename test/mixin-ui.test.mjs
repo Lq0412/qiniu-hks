@@ -383,3 +383,10 @@ function assertConcealed(payload) {
   assert.equal(concealmentHolds(game), true, JSON.stringify({ phase: game.phase, humanScore: game.humanScore, aiScore: game.aiScore, votes: game.votes, outcome: game.outcome }));
   assert.equal(hasEndingSpeech(game), false);
 }
+
+test('reduced motion keeps player and voting timers at real-time speed', () => {
+  for (const phase of ['round_player', 'defense', 'vote']) {
+    const intent = autoIntent({ phase, cue: null }, { readScale: 0.15 });
+    assert.equal(intent.delay, intent.ms, `${phase}: one game second must take one real second`);
+  }
+});

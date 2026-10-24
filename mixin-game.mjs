@@ -44,6 +44,8 @@ export const TIMEOUTS = {
   defenseCap: 20000,
   vote: 20000,
   voteLock: 10000,
+  textVote: 45000,
+  textVoteLock: 30000,
   reveal: 20000,
   roundAiHard: 70000,
 };
@@ -427,7 +429,8 @@ export function viewMixin(game) {
     playerSeat: game.playerSeat,
     revision: game.revision,
     pending: game.pending ? { ...game.pending } : null,
-    deadlineAt: game.deadlineAt,
+    deadlineAt: game.mode === 'text' && game.phase === 'vote' && !game.announced
+      ? game.phaseEnteredAt + TIMEOUTS.textVoteLock : game.deadlineAt,
     note: game.note,
     error: game.error,
     hintReleased: game.hintReleased,
@@ -641,7 +644,7 @@ function beginRoundAi(game, now) {
 }
 
 function beginPlayer(game, now) {
-  game.note = '轮到你了，15 秒。';
+  game.note = `轮到你了，${TIMEOUTS.playerHard / 1000} 秒。`;
   game.deadlineAt = now + TIMEOUTS.playerHard;
 }
 
@@ -677,7 +680,7 @@ function beginVote(game, now) {
   game.note = '正在计票。';
   game.announced = false;
   game.voteLocked = game.playerVote != null;
-  game.deadlineAt = now + TIMEOUTS.vote;
+  game.deadlineAt = now + (game.mode === 'text' ? TIMEOUTS.textVote : TIMEOUTS.vote);
   if (game.voteLocked) announce(game, now);
 }
 
@@ -892,7 +895,7 @@ function tickOnce(game, now) {
       return true;
     }
   }
-  if (game.phase === 'vote' && !game.announced && now - game.phaseEnteredAt >= TIMEOUTS.voteLock) {
+  if (game.phase === 'vote' && !game.announced && now - game.phaseEnteredAt >= (game.mode === 'text' ? TIMEOUTS.textVoteLock : TIMEOUTS.voteLock)) {
     announce(game, now);
     return true;
   }
