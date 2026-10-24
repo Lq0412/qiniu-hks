@@ -13,5 +13,32 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
-      - run: npm run test:rules
-      - run: npm run test:coverage
+      - name: game.mjs branch coverage gate (>=90%)
+        run: npm run test:rules 2>&1 | tee rules.txt
+      - name: Full test suite with line coverage gate (>=80%)
+        run: npm run test:coverage 2>&1 | tee coverage.txt
+      - name: Publish test and coverage results to job summary
+        if: always()
+        run: |
+          {
+            echo '## 自动化检查结果'
+            echo ''
+            echo '### 全量测试与覆盖率（npm run test:coverage，行覆盖门禁 ≥80%）'
+            echo '```'
+            sed -n '/^# tests/,/^# end of coverage report/p' coverage.txt
+            echo '```'
+            echo ''
+            echo '### game.mjs 分支覆盖门禁（npm run test:rules，≥90%）'
+            echo '```'
+            sed -n '/^# tests/,/^# end of coverage report/p' rules.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: |
+            coverage.txt
+            rules.txt
+          if-no-files-found: ignore

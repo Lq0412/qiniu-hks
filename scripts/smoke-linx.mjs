@@ -20,7 +20,7 @@ for(let stage=game.stage;stage<=6;stage++){
    if(message.type==='tts' && message.state==='sentence_start')console.log('测试员:',message.text);
    if(message.type==='hello')console.log('连接成功');
    if(message.type==='error')console.log('平台提示:',message.message);
-   if(message.type==='game'&&(game.feedback||game.status==='done'))setTimeout(()=>finish(),1200);
+   if(message.type==='game'&&(game.feedback||game.status==='done'))setTimeout(()=>finish(),4000);
   };
   bridge=connectLinx({config,credentials,game,client});
  });
