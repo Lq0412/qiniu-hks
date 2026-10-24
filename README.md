@@ -19,6 +19,7 @@ Node.js 24，执行 `npm ci`、`npm start`，打开 http://127.0.0.1:4173/ 。�
 - `npm run test:rules`：规则分支覆盖率至少90%。
 - `npm run test:coverage`：自有服务端行覆盖率至少80%。
 - `npm run smoke:linx`：六题真实平台链路测试，会使用平台额度；输入为合成文字，输出包含真实语音，不替代真人麦克风验收。
+- `npm run probe:voice`：灵矽语音能力探针。凭据只读本机 `.linx-device.json` 或环境变量，结果写入已忽略的 `probe-results/`。没有真实凭据时用 `npm test` 里的模拟消息流验证测量逻辑。
 
 ## 文档
 
