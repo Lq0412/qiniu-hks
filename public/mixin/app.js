@@ -24,6 +24,7 @@ import {
   screenOf,
   sessionRecord,
   shareCardModel,
+  speechPlay,
   paintShareCard,
   speakingSeat,
   subtitleModel,
@@ -55,6 +56,9 @@ const state = {
   difficulty: 'normal',
   draft: '',
   holding: false,
+  sending: false,
+  faults: 0,
+  mismatch: false,
   loopId: 0,
   wake: null,
   chain: Promise.resolve(),
@@ -121,6 +125,7 @@ function adopt(game, { clockDelta = 0 } = {}) {
     state.previousText = last.text;
   }
   state.game = next;
+  state.mismatch = false;
   if (next?.phase === 'lobby') {
     state.sceneId = next.scene?.id || state.sceneId;
     state.difficulty = next.difficulty || state.difficulty;
@@ -152,21 +157,18 @@ async function request(path, { method = 'GET', body } = {}) {
 async function call(action, body, options) {
   const cue = state.game?.cue;
   const payload = await request(`/api/mixin/${state.sessionId}/${action}`, { method: 'POST', body });
+  state.faults = 0;
   adopt(payload.game, options);
   const url = clipUrl(payload);
-  if (url) {
-    await play(url, {
-      seat: cue?.seat ?? null,
-      roleId: cue?.roleId ?? null,
-      voiceId: payload.game?.cue?.voice?.voiceId ?? null,
-    });
-  }
+  if (url) await play(url, speechPlay(cue));
   return payload;
 }
 
 function fail(error) {
   if (error?.payload?.game) adopt(error.payload.game);
+  state.mismatch = error?.status === 409 && String(error?.message || '').includes('对不上');
   toast(error?.message || '出了点问题。请再试一次。');
+  if (state.mismatch) render();
 }
 
 function pause(ms) {
@@ -234,8 +236,13 @@ async function runLoop(id) {
       stopThinking();
       stop();
       fail(error);
-      if (error?.payload?.game && state.game && !['lobby', 'result', 'error'].includes(state.game.phase)) kick();
-      return;
+      const retry = error?.payload?.game && state.game && !['lobby', 'result', 'error'].includes(state.game.phase);
+      if (!retry) return;
+      state.faults += 1;
+      if (state.faults > 4) return;
+      const waited = await pause(Math.min(4000, 500 * state.faults));
+      if (id !== state.loopId || waited === 'wake') return;
+      kick();
     }
   }
 }
@@ -287,27 +294,37 @@ async function begin() {
 }
 
 async function submitLine() {
+  if (state.sending) return;
+  state.sending = true;
+  const send = document.querySelector('#send');
+  if (send) send.disabled = true;
   const text = state.draft.trim();
-  await userAction(async () => {
-    const pending = state.game?.pending;
-    if (pending && pending.text === text) {
-      await call('confirm', { revision: pending.revision });
-      state.draft = '';
-      state.holdRead = true;
-      return;
-    }
-    if (!text) return;
-    const said = await call('text', { text, typed: true });
-    if (said.accepted === false) {
-      toast(state.game?.note || '这句没记上。');
-      return;
-    }
-    if (state.game?.pending) {
-      await call('confirm', { revision: state.game.pending.revision });
-      state.draft = '';
-      state.holdRead = true;
-    }
-  });
+  try {
+    await userAction(async () => {
+      const pending = state.game?.pending;
+      if (pending && pending.text === text) {
+        await call('confirm', { revision: pending.revision });
+        state.draft = '';
+        state.holdRead = true;
+        return;
+      }
+      if (!text) return;
+      const said = await call('text', { text, typed: true });
+      if (said.accepted === false) {
+        toast(state.game?.note || '这句没记上。');
+        return;
+      }
+      if (state.game?.pending) {
+        await call('confirm', { revision: state.game.pending.revision });
+        state.draft = '';
+        state.holdRead = true;
+      }
+    });
+  } finally {
+    state.sending = false;
+    const again = document.querySelector('#send');
+    if (again) again.disabled = false;
+  }
 }
 
 async function askHint() {
@@ -584,6 +601,16 @@ function paintDock() {
   }
   const mine = el.querySelector('#mine');
   if (mine) mine.textContent = state.game.playerVote ? `你投了 ${state.game.playerVote} 号` : '你还没投票';
+  let home = el.querySelector('#home');
+  if (state.mismatch && !home) {
+    home = document.createElement('button');
+    home.id = 'home';
+    home.type = 'button';
+    home.className = 'ghost';
+    home.textContent = '回开局';
+    el.appendChild(home);
+  }
+  if (!state.mismatch && home) home.remove();
 }
 
 function dockHtml(mode) {
@@ -721,7 +748,7 @@ app.addEventListener('click', event => {
   if (button.id === 'share') downloadCard();
   if (button.id === 'back') backToLobby();
   if (button.id === 'reload') reloadView();
-  if (button.id === 'abandon') {
+  if (button.id === 'home' || button.id === 'abandon') {
     stop();
     clearStored();
     state.screen = '';

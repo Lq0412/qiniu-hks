@@ -178,11 +178,11 @@ HTTP 建局只接受 `demo`、`difficulty`、`seed`、`sceneId`、`cardIds`、`r
 - `accuse`：可以 `interrupt`。
 - `defense` / 还没锁票的 `vote`：`vote`，座位是 1–4。
 - 念票时只渲染公开视图里已经出现的 `votes`。揭晓前不补全没念出来的票。
-- `reveal` 或 `result`：展示 `report` 里的口播、人味分、称号和被抓住的那句。再来一局是 `restart` 再 `start`。分享卡用 canvas 画 PNG，没有二维码。
+- `reveal` 或 `result`：展示 `report` 里的口播、人味分、称号和 `report.quote`。这句引语和口播 `endingText` 里的那句相同，空话是「……」。再来一局是 `restart` 再 `start`。分享卡用 canvas 画 PNG，没有二维码。
 
 揭晓前 `sanitizeView` 会丢掉 `humanScore`、`aiScore`、`script`、`report`、`outcome`，也不会把 `examplePlayer`、舞台指令、`fallbackText` 放进界面状态。`sessionStorage` 只存局 id 和时钟。409（cookie 对不上或规则拒绝）和 403（不是本机）用 `friendlyError` 提示。断线或刷新后用原来的 cookie 再 `GET /api/mixin/:id`。
 
-如果 step 响应里带了字符串 `audioUrl` 或 `clip.url`，页面会 `await play(url, { seat, roleId, voiceId })`。文字模式没有这个字段。按住说话按钮已经留好，调用 `startHoldToTalk` / `stopHoldToTalk`。语音调度只替换 `audio.js` 的函数体。
+如果 step 响应里带了字符串 `audioUrl` 或 `clip.url`，页面会 `await play(url, speechPlay(cue))`。`seat`、`roleId`、`voiceId` 都来自这一步之前的当前 cue；`sanitizeView` 只保留 `cue.voice.voiceId`。文字模式没有音频字段。按住说话按钮已经留好，调用 `startHoldToTalk` / `stopHoldToTalk`。语音调度只替换 `audio.js` 的函数体。
 
 ## 怎么跑
 

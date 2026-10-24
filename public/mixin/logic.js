@@ -133,6 +133,7 @@ export function sanitizeView(game) {
       roleId: game.cue.roleId,
       name: game.cue.name,
       deadlineAt: game.cue.deadlineAt ?? null,
+      voice: cueVoice(game.cue.voice),
     } : null,
     humanScore: revealed ? game.humanScore : null,
     aiScore: revealed ? game.aiScore : null,
@@ -325,11 +326,23 @@ export function clipUrl(payload) {
   return typeof url === 'string' && url.trim() ? url : null;
 }
 
+function cueVoice(voice) {
+  if (!voice || typeof voice.voiceId !== 'string' || !voice.voiceId) return null;
+  return { voiceId: voice.voiceId };
+}
+
+export function speechPlay(cue) {
+  return {
+    seat: cue?.seat ?? null,
+    roleId: cue?.roleId ?? null,
+    voiceId: cue?.voice?.voiceId ?? null,
+  };
+}
+
 export function caughtQuote(report) {
   if (!report) return { label: '', text: '' };
-  if (report.leakQuote) return { label: '被抓住的那句', text: report.leakQuote };
-  if (report.bestAiQuote) return { label: '最像 AI 的一句', text: report.bestAiQuote };
-  return { label: '被抓住的那句', text: '……' };
+  const text = typeof report.quote === 'string' && report.quote ? report.quote : '……';
+  return { label: '被抓住的那句', text };
 }
 
 export function shareCardModel(game) {

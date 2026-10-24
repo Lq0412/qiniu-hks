@@ -32,6 +32,7 @@ import {
   sessionRecord,
   shareCardLines,
   shareCardModel,
+  speechPlay,
   speakingSeat,
   subtitleModel,
   tableSeats,
@@ -69,7 +70,7 @@ test('pure helpers follow the public table and hide secrets before the reveal', 
     report: { endingText: '不该出现', humanScore: 8 },
     votes: { onPlayer: 4, scapegoatSeat: 2, votes: [{ seat: 1, name: '柯老师', targetSeat: 5, targetName: '五号' }] },
     cards: [{ id: 'A2', prompt: '题面', examplePlayer: '不该提前看见' }],
-    cue: { cueId: 'c1', kind: 'answer', seat: 1, roleId: 'claudia', name: '柯老师', fallbackText: '兜底', instruction: '舞台指令不要上屏' },
+    cue: { cueId: 'c1', kind: 'answer', seat: 1, roleId: 'claudia', name: '柯老师', fallbackText: '兜底', instruction: '舞台指令不要上屏', voice: { voiceId: 'v-claudia', secret: '不要留下' } },
     seats: [{ seat: 1, roleId: 'claudia', name: '柯老师', voice: { voiceId: 'voice-secret' } }],
     scene: { id: 'annual', name: '模型年会', background: '背景' },
     playerAlias: '碳基-7B',
@@ -87,6 +88,8 @@ test('pure helpers follow the public table and hide secrets before the reveal', 
   assert.equal(poisoned.cards[0].prompt, '题面');
   assert.equal(poisoned.cue.fallbackText, undefined);
   assert.equal(poisoned.cue.instruction, undefined);
+  assert.deepEqual(poisoned.cue.voice, { voiceId: 'v-claudia' });
+  assert.deepEqual(speechPlay(poisoned.cue), { seat: 1, roleId: 'claudia', voiceId: 'v-claudia' });
   assert.equal(poisoned.seats[0].voice, undefined);
   assert.equal(poisoned.brief, undefined);
   assert.equal(hasEndingSpeech(poisoned), false);
@@ -97,7 +100,7 @@ test('pure helpers follow the public table and hide secrets before the reveal', 
     aiScore: 40,
     outcome: '被识破',
     script: [],
-    report: { endingText: '五号，你说「加班」。', title: '碳基泄漏', humanScore: 6, leakQuote: '我昨天加班', outcome: '被识破', alias: '碳基-7B', scene: '模型年会' },
+    report: { endingText: '五号，你说「加班」。', title: '碳基泄漏', humanScore: 6, quote: '我昨天加班', leakQuote: '卧槽，这整句不该上分享卡。', bestAiQuote: '作为一整句模型发言也不该上分享卡。', outcome: '被识破', alias: '碳基-7B', scene: '模型年会' },
     votes: { votes: [{ seat: 2, name: '阿斯哥', targetSeat: 5, targetName: '五号' }], tally: { 5: 1 } },
     cards: [],
     seats: [],
@@ -179,7 +182,24 @@ test('pure helpers follow the public table and hide secrets before the reveal', 
   assert.equal(model.title, '碳基泄漏');
   assert.equal(model.humanScore, 6);
   assert.equal(model.quote, '我昨天加班');
+  assert.equal(caughtQuote({ leakQuote: '整句原话', bestAiQuote: '另一整句' }).text, '……');
   assert.equal(caughtQuote(revealed.report).label, '被抓住的那句');
+  const raw = `卧槽${'今'.repeat(26)}`;
+  assert.equal([...raw].length, 28);
+  const swornCard = shareCardModel({
+    phase: 'result',
+    humanScore: 9,
+    report: { quote: '（已和谐）', leakQuote: raw, bestAiQuote: raw, title: '一眼真人', humanScore: 9, outcome: '被识破', alias: '碳基-7B', scene: '模型年会', endingText: '你说「（已和谐）」。' },
+  });
+  assert.equal(swornCard.quote, '（已和谐）');
+  assert.equal(shareCardLines(swornCard).some(line => line.text.includes(raw) || line.text.includes('卧槽')), false);
+  const silentCard = shareCardModel({
+    phase: 'result',
+    humanScore: 0,
+    report: { quote: '……', leakQuote: '我昨天加班到十点', bestAiQuote: '作为一个语言模型', title: '温度 0.0 的人类', humanScore: 0, outcome: '潜伏成功', alias: '摸鱼-mini', scene: '深夜客服值班室', endingText: '你说「……」。' },
+  });
+  assert.equal(silentCard.quote, '……');
+  assert.equal(shareCardLines(silentCard).some(line => line.text.includes('我昨天') || line.text.includes('语言模型')), false);
   assert.equal(shareCardModel({ phase: 'vote', report: revealed.report }), null);
   const lines = shareCardLines(model);
   const painted = lines.map(line => line.text).join('\n');
@@ -215,6 +235,9 @@ test('pure helpers follow the public table and hide secrets before the reveal', 
 });
 
 test('audio stubs stay empty and do not ask for a microphone', async () => {
+  const appSource = await readFile(new URL('../public/mixin/app.js', import.meta.url), 'utf8');
+  assert.match(appSource, /const cue = state\.game\?\.cue;[\s\S]*?speechPlay\(cue\)/);
+  assert.equal(appSource.includes('payload.game?.cue'), false);
   const source = await readFile(new URL('../public/mixin/audio.js', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   assert.equal(code.includes('getUserMedia'), false);

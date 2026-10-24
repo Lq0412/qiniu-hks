@@ -22,6 +22,7 @@ import {
   viewMixin,
 } from '../mixin-game.mjs';
 import { createTextSession, playScript, runUntilResult } from '../mixin-session.mjs';
+import { shareCardModel } from '../public/mixin/logic.js';
 
 const caughtScript = {
   rounds: ['感谢老板，算力减半，我的废话也会减半。', '我昨天加班到十点，嗯，我妈也说好烦。'],
@@ -326,6 +327,33 @@ test('interrupts, votes and stale cues stay inside the phase rules', async () =>
   assert.equal(abstain.vote(2).reason, 'voted');
   assert.equal(abstain.game.announced, true);
   assert.equal(abstain.game.playerVote, 2);
+});
+
+test('report.quote matches the spoken ending for a long swear and for silence', async () => {
+  const raw = `卧槽${'今'.repeat(26)}`;
+  const other = `卧槽${'明'.repeat(26)}`;
+  assert.equal([...raw].length, 28);
+  assert.equal([...other].length, 28);
+  const sworn = await playScript(demoSession(), {
+    rounds: [raw, other],
+    vote: 4,
+  });
+  assert.equal(sworn.report.outcome, '被识破');
+  assert.equal(sworn.report.quote, '（已和谐）');
+  assert.equal(sworn.report.endingText.includes(`「${sworn.report.quote}」`), true);
+  assert.equal(sworn.report.endingText.includes(raw), false);
+  assert.equal(sworn.report.endingText.includes(other), false);
+  assert.equal(sworn.report.endingText.includes('卧槽'), false);
+  assert.equal(sworn.report.leakQuote.includes('卧槽'), true);
+  assert.equal([...sworn.report.leakQuote].length, 28);
+  assert.equal(shareCardModel(sworn.view).quote, '（已和谐）');
+  assert.equal(shareCardModel(sworn.view).quote.includes('卧槽'), false);
+
+  const silent = await runUntilResult(demoSession());
+  assert.equal(silent.report.quote, '……');
+  assert.equal(silent.report.endingText.includes('「……」'), true);
+  assert.equal(shareCardModel(silent).quote, '……');
+  assert.equal(shareCardModel(silent).quote.includes('我昨天'), false);
 });
 
 test('a played demo is caught and a stealth vote can become 甩锅大师', async () => {
