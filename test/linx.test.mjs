@@ -5,7 +5,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { deviceConfig, ota } from '../linx-config.mjs';
-import { connectLinx, isProcessSpeech } from '../linx.mjs';
+import { connectLinx, isProcessSpeech, mcpRejectDetail } from '../linx.mjs';
 import { createGame } from '../game.mjs';
 
 class FakeSocket extends EventEmitter {
@@ -74,4 +74,24 @@ test('Opus decoding and connection failures are explicit',()=>{
   const closed=fixture();closed.upstream.close();assert.equal(closed.client.readyState,3);
   const client=fixture();client.client.emit('error',new Error('client'));assert.equal(client.upstream.readyState,3);
   assert.throws(()=>connectLinx({credentials:{url:'wss://evil.test'},game:createGame()}),/未支持/);
+});
+test('mcp reject log prints the error string', () => {
+  assert.equal(mcpRejectDetail({ result: { content: [{ text: JSON.stringify({ error: '题目或回答已更新，请先读取状态。' }) }] } }), '题目或回答已更新，请先读取状态。');
+  assert.equal(mcpRejectDetail({ result: { content: [{ text: JSON.stringify({ error: { message: '引用必须逐字' } }) }] } }), '引用必须逐字');
+  assert.equal(mcpRejectDetail({ result: { content: [{ text: '{' }] } }), '请求被拒绝');
+  assert.equal(mcpRejectDetail({}), '请求被拒绝');
+  const lines = [];
+  const original = console.error;
+  console.error = (...args) => { lines.push(args.map(item => String(item)).join(' ')); };
+  try {
+    const f = fixture();
+    f.incoming({ type: 'hello', session_id: 's', audio_params: { format: 'pcm', sample_rate: 16000, channels: 1 } });
+    f.incoming({ type: 'mcp', payload: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'self.test.evaluate', arguments: { question: 1, revision: 999, quote: 'x', feedback: 'x' } } } });
+  } finally {
+    console.error = original;
+  }
+  const line = lines.find(item => item.includes('[mcp拒绝]'));
+  assert.ok(line);
+  assert.equal(line.includes('undefined'), false);
+  assert.match(line, /题目或回答已更新/);
 });

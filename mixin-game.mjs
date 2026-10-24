@@ -4,7 +4,7 @@
 import { randomUUID } from 'node:crypto';
 import { cardById, drawCards, replyFor, sceneById, SCENES } from './mixin-bank.mjs';
 import { ENDING_FALLBACK, renderEnding } from './mixin-endings.mjs';
-import { openingLine, renderBrief, stageDirection, toneFor } from './mixin-prompts.mjs';
+import { accusationLine, HOST_NUDGE, HOST_RULES, HOST_SKIP_PLAYER, HOST_WRAP_EARLY, HOST_WRAP_LATE, openingLine, renderBrief, stageDirection, toneFor } from './mixin-prompts.mjs';
 import { PLAYER_ALIASES, ROLES, createRng, defaultLineup, pickAlias, pickLineup, relationshipLines, roleById, seatFrom, voiceOf } from './mixin-roles.mjs';
 import {
   clampScore,
@@ -597,7 +597,11 @@ function safeReply(card, roleId) {
 }
 
 function beginIntro(game, now) {
-  const cues = [cueFields(game, { kind: 'host_open', seat: 0, roleId: 'host', timeoutMs: TIMEOUTS.hostCue, maxChars: 400, fallbackText: openingLine(game.scene.name, game.playerAlias) })];
+  const open = openingLine(game.scene.name, game.playerAlias);
+  const cues = [
+    cueFields(game, { kind: 'host_open', seat: 0, roleId: 'host', timeoutMs: TIMEOUTS.hostCue, maxChars: 400, fallbackText: open, line: open }),
+    cueFields(game, { kind: 'host_open', seat: 0, roleId: 'host', timeoutMs: TIMEOUTS.hostCue, maxChars: 400, fallbackText: HOST_RULES, line: HOST_RULES }),
+  ];
   for (const seat of game.seats) {
     cues.push(cueFields(game, {
       kind: 'intro', seat: seat.seat, roleId: seat.roleId, voice: seat.voice,
@@ -622,6 +626,7 @@ function beginRoundAi(game, now) {
   const cues = [cueFields(game, {
     kind: 'host_card', seat: 0, roleId: 'host', timeoutMs: TIMEOUTS.hostCue, maxChars: 90,
     card: card.prompt, nextName: first.name,
+    line: `第${game.round}题：${card.prompt}请${first.name}先来。`.slice(0, 90),
     fallbackText: `第${game.round}题：${card.prompt}请${first.name}先来。`.slice(0, 90),
   })];
   for (const seatNo of order) {
@@ -642,19 +647,22 @@ function beginPlayer(game, now) {
 
 function beginWrap(game, now) {
   refreshHuman(game);
-  const fallback = game.round < 2 ? '这一轮先记在板上。' : '两轮说完，准备互盘。';
-  arm(game, [cueFields(game, { kind: 'wrap', seat: 0, roleId: 'host', timeoutMs: TIMEOUTS.wrap, maxChars: 30, fallbackText: fallback })], now, TIMEOUTS.wrap);
+  const fallback = game.round < 2 ? HOST_WRAP_EARLY : HOST_WRAP_LATE;
+  arm(game, [cueFields(game, { kind: 'wrap', seat: 0, roleId: 'host', timeoutMs: TIMEOUTS.wrap, maxChars: 30, fallbackText: fallback, line: fallback })], now, TIMEOUTS.wrap);
 }
 
 function beginAccuse(game, now) {
   game.script = buildScript(game);
-  const cues = game.script.map((item, index) => cueFields(game, {
-    kind: 'accuse', seat: item.seat, roleId: item.roleId,
-    voice: game.seats.find(seat => seat.seat === item.seat).voice,
-    timeoutMs: TIMEOUTS.accuseCue, maxChars: 40,
-    target: item.target, targetName: item.targetName, quote: item.quote, tone: toneFor(game.difficulty),
-    scriptIndex: index, fallbackText: accuseLine(item),
-  }));
+  const cues = game.script.map((item, index) => {
+    const line = accusationLine({ roleId: item.roleId, targetName: item.targetName, quote: item.quote, index });
+    return cueFields(game, {
+      kind: 'accuse', seat: item.seat, roleId: item.roleId,
+      voice: game.seats.find(seat => seat.seat === item.seat).voice,
+      timeoutMs: TIMEOUTS.accuseCue, maxChars: Math.max(line.length, 40),
+      target: item.target, targetName: item.targetName, quote: item.quote, tone: toneFor(game.difficulty),
+      scriptIndex: index, fallbackText: line, line,
+    });
+  });
   arm(game, cues, now, TIMEOUTS.accuseHard);
 }
 
@@ -701,7 +709,7 @@ function beginReveal(game, now) {
   game.report.endingText = ending.text;
   game.report.quote = ending.quote;
   arm(game, [cueFields(game, {
-    kind: 'reveal', seat: 0, roleId: 'host', timeoutMs: TIMEOUTS.reveal, maxChars: ending.text.length,
+    kind: 'reveal', seat: 0, roleId: 'host', timeoutMs: TIMEOUTS.reveal, maxChars: Math.max(ending.text.length, 1),
     line: ending.text, outcome: game.report.outcome, received: game.report.received,
     fallbackText: ending.text,
   })], now, TIMEOUTS.reveal);
@@ -715,12 +723,15 @@ function beginResult(game) {
 function announce(game, now) {
   const deadline = game.deadlineAt ?? now + TIMEOUTS.vote;
   ensurePlan(game);
-  const cues = game.votePlan.votes.map(vote => cueFields(game, {
-    kind: 'vote', seat: vote.seat, roleId: vote.roleId,
-    voice: game.seats.find(seat => seat.seat === vote.seat).voice,
-    timeoutMs: 4000, maxChars: 20, target: vote.targetSeat,
-    fallbackText: `${roleById(vote.roleId).catchphrases[0]}，我投${vote.targetSeat}号。`.slice(0, 20),
-  }));
+  const cues = game.votePlan.votes.map(vote => {
+    const line = `${roleById(vote.roleId).catchphrases[0]}，我投${vote.targetSeat}号。`.slice(0, 20);
+    return cueFields(game, {
+      kind: 'vote', seat: vote.seat, roleId: vote.roleId,
+      voice: game.seats.find(seat => seat.seat === vote.seat).voice,
+      timeoutMs: 4000, maxChars: 20, target: vote.targetSeat,
+      fallbackText: line, line,
+    });
+  });
   game.announced = true;
   arm(game, cues, now, Math.max(1000, deadline - now));
 }
@@ -755,8 +766,9 @@ function shiftCue(game, now) {
   if (cue.kind === 'answer') {
     const spoken = game.lines.filter(line => line.round === game.round && line.kind === 'answer').map(line => `${line.seat}号-${line.text}`).join('；');
     cue.spoken = spoken || '还没有';
-    cue.instruction = stageDirection(cue);
   }
+  cue.situation = situationLine(game);
+  cue.instruction = stageDirection(cue);
   cue.startedAt = now;
   cue.deadlineAt = now + cue.timeoutMs;
   remember(game, cue.instruction);
@@ -794,6 +806,7 @@ function cueFields(game, fields) {
     received: fields.received ?? 0,
     alias: game.playerAlias,
     line: typeof fields.line === 'string' ? fields.line : '',
+    situation: '',
   };
   cue.instruction = stageDirection(cue);
   return cue;
@@ -873,7 +886,7 @@ function tickOnce(game, now) {
     if (!game.nudged && !game.pending && elapsed >= TIMEOUTS.playerNudge) {
       game.nudged = true;
       game.stallMark = 'hint12';
-      const cue = cueFields(game, { kind: 'nudge', seat: 0, roleId: 'host', timeoutMs: TIMEOUTS.hostCue, maxChars: 24, fallbackText: '五号模型似乎正在加载。' });
+      const cue = cueFields(game, { kind: 'nudge', seat: 0, roleId: 'host', timeoutMs: TIMEOUTS.hostCue, maxChars: 24, fallbackText: HOST_NUDGE, line: HOST_NUDGE });
       game.queue = [cue, ...game.queue];
       shiftCue(game, now);
       return true;
@@ -893,7 +906,7 @@ function skipOrConfirm(game, now) {
   }
   if (game.phase === 'round_player') {
     game.playerLines.push(playerRow(game, { text: '', kind: 'skip', typed: false, durationMs: null, silenceMs: null, usedHint: false, stall: 'skip20', keywords: [], quoted: '' }));
-    pushDialogue(game, 0, '群主·零号', '五号，网络不太好啊。', 'skip_note', now);
+    pushDialogue(game, 0, '群主·零号', HOST_SKIP_PLAYER, 'skip_note', now);
     game.lines.push(game.dialogue.at(-1));
     game.pending = null;
     game.note = '五号，网络不太好啊。';
@@ -1010,10 +1023,9 @@ function clipQuote(text) {
   return clean.length <= 18 ? clean : clean.slice(0, 12);
 }
 
-function accuseLine(item) {
-  const head = `${roleById(item.roleId).catchphrases[0]}，${item.targetName}说过「${item.quote}」。`;
-  const text = head.length <= 40 ? head : `${item.targetName}说过「${item.quote}」。`;
-  return text.slice(0, 40);
+function situationLine(game) {
+  if (game.phase === 'reveal') return `结果已定：${game.report.outcome}，五号得票 ${game.report.received}/4。`;
+  return `${game.phase} 第${game.round}轮。身份和票型由系统固定，揭晓前不要猜测谁是人类。`;
 }
 
 function buildReport(game) {
