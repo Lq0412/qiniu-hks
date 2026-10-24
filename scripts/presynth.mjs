@@ -41,45 +41,61 @@ export async function runPresynth({
   createLink = loaded => createMixinLink({ config: loaded.config, credentials: loaded.credentials }),
   timeoutMs = Number(env.PRESYNTH_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS),
   catalog = presynthCatalog(),
+  link: existingLink = null,
+  shouldStop = () => false,
 } = {}) {
-  const loaded = await resolve(await loadSpeakCredentials({ env, readFile }));
   const voiceId = voiceOf(roleById('host')).voiceId;
   if (!voiceId) throw new Error('群主没有音色');
-  log(`凭据来源：${loaded.source}`);
-  const link = createLink(loaded);
+  let loaded = null;
+  let link = existingLink;
+  if (!link) {
+    loaded = await resolve(await loadSpeakCredentials({ env, readFile }));
+    log(`凭据来源：${loaded.source}`);
+    link = createLink(loaded);
+  }
   const lines = [];
+  let stopped = false;
   try {
-    await link.connect();
-    log(`单连接已建立（第 ${link.connectCount} 次连接）`);
+    if (!existingLink) {
+      await link.connect();
+      log(`单连接已建立（第 ${link.connectCount} 次连接）`);
+    }
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, 'reveal-sfx.wav'), revealSfxWav());
     for (const item of catalog) {
+      if (shouldStop()) { stopped = true; break; }
       const result = await withTimeout(
         link.detect({ text: scriptedDetect('群主·零号', item.text, '预合成。'), voiceId }),
         timeoutMs,
         `${item.id}这一句`,
       );
+      if (shouldStop()) { stopped = true; break; }
       if (!result.pcm?.length) throw new Error(`这一句没有收到音频：${item.id}`);
       const bytes = encodeMxop(result.pcm);
       if (bytes.length > MAX_FILE_BYTES) throw new Error(`音频过大：${item.id} ${bytes.length} 字节`);
       const entry = ttsManifestEntry(item, voiceId);
-      await mkdir(dir, { recursive: true });
       await writeFile(path.join(dir, entry.file), bytes);
       lines.push(entry);
-      log(`${entry.file}  bytes=${bytes.length}  pcm=${result.pcm.length}`);
+      const spoken = typeof result.spoken === 'string' ? result.spoken.trim() : '';
+      log(`${entry.file}  bytes=${bytes.length}  pcm=${result.pcm.length}  口播「${spoken || '（无字幕）'}」`);
     }
   } finally {
-    link.close();
+    if (!existingLink) link.close();
   }
-  const sfx = revealSfxWav();
-  await mkdir(dir, { recursive: true });
-  await writeFile(path.join(dir, 'reveal-sfx.wav'), sfx);
   const manifest = { version: 1, lines: [sfxManifestEntry(), ...lines] };
-  await writeFile(path.join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
-  log(`presynth 完成：${lines.length} 句`);
-  log('目录：public/mixin/audio');
-  log('manifest：public/mixin/audio/manifest.json');
-  log(`音效：reveal-sfx.wav（${sfx.length} 字节，本地生成，不走语音接口）`);
-  log('请把 public/mixin/audio/ 整目录提交。mxop 是 16kHz 单声道 Opus，单句应小于 256KB。');
-  return { lines, manifest, connectCount: link.connectCount };
+  if (!stopped || lines.length) {
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+  }
+  if (stopped) log(`预合成让给对局：已写 ${lines.length} 句`);
+  else {
+    log(`presynth 完成：${lines.length} 句`);
+    log('目录：public/mixin/audio');
+    log('manifest：public/mixin/audio/manifest.json');
+    log('音效：reveal-sfx.wav（本地生成，不走语音接口）');
+    log('这些文件已在 .gitignore 里，不要提交。mxop 是 16kHz 单声道 Opus，单句应小于 256KB。');
+  }
+  return { lines, manifest, connectCount: link.connectCount, stopped };
 }
 
 export async function main(options = {}) {

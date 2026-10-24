@@ -1,10 +1,13 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { deviceConfig, ota } from './linx-config.mjs';
 import { createGame, advance, view } from './game.mjs';
 import { connectLinx } from './linx.mjs';
+import { createMixinLink } from './mixin-link.mjs';
+import { createAudioLane } from './mixin-lane.mjs';
 import { createMixinHub } from './mixin-http.mjs';
 
 const assets = {
@@ -22,9 +25,21 @@ const assets = {
   '/mixin/logic.js': ['mixin/logic.js', 'text/javascript'],
 };
 
-export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice = connectLinx } = {}) {
+export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice = connectLinx, mixinCredentials = null, openAudioLink = null, audioDir = null } = {}) {
   const sessions = new Map();
   const mixin = createMixinHub();
+  let audioLane = null;
+  if (mixinCredentials?.credentials?.url && mixinCredentials?.credentials?.token) {
+    audioLane = createAudioLane({
+      dir: audioDir ?? fileURLToPath(new URL('./public/mixin/audio/', import.meta.url)),
+      log: line => console.log(line),
+      openLink: openAudioLink ?? (() => createMixinLink({
+        config: mixinCredentials.config,
+        credentials: mixinCredentials.credentials,
+      })),
+    });
+    audioLane.warmupBackground();
+  }
   let active = null;
   const sidOf = req => /(?:^|;\s*)counter=([a-f0-9-]+)/.exec(req.headers.cookie ?? '')?.[1];
   const server = http.createServer(async (req, res) => {
@@ -102,6 +117,7 @@ export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice =
     });
   });
   server.on('close', () => { active?.bridge?.close(); wss.close(); });
+  server.audioLane = audioLane;
   return server;
 }
 

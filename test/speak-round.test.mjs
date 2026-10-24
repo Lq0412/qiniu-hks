@@ -198,6 +198,8 @@ test('presynth writes stable small mxop files and a manifest on one connection',
     assert.equal(printed.includes(TOKEN), false);
     assert.equal(printed.includes(KEY), false);
     assert.match(logs.join('\n'), /presynth 完成：11 句/);
+    assert.match(logs.join('\n'), /口播「/);
+    assert.match(logs.join('\n'), /这些文件已在 \.gitignore 里，不要提交。/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

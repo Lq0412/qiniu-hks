@@ -8,3 +8,6 @@ test-results/
 *.log
 .linx-device.json
 probe-results/
+public/mixin/audio/*.mxop
+public/mixin/audio/manifest.json
+public/mixin/audio/reveal-sfx.wav
