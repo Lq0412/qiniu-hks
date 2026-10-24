@@ -119,9 +119,10 @@ export function renderEnding(input = {}, options = {}) {
   assertTemplate(picked);
   const pole = outcome === '被识破' ? 'human' : 'ai';
   const score = Number.isFinite(input.humanScore) ? Math.max(0, Math.trunc(input.humanScore)) : 0;
+  const quote = quoteSlot(input.quote, input.keywords, pole);
   const text = picked.text
     .replaceAll('{人味分}', String(score))
     .replaceAll('{投票者}', voterText(picked.id, input.voters))
-    .replaceAll('{玩家原话}', quoteSlot(input.quote, input.keywords, pole));
-  return { id: picked.id, text, recentIds: [...recentIds, picked.id].slice(-3) };
+    .replaceAll('{玩家原话}', quote);
+  return { id: picked.id, text, quote, recentIds: [...recentIds, picked.id].slice(-3) };
 }

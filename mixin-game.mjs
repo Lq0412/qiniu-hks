@@ -694,11 +694,12 @@ function beginReveal(game, now) {
     });
   } catch (error) {
     console.error(error);
-    ending = { id: null, text: ENDING_FALLBACK, recentIds: game.recentEndingIds };
+    ending = { id: null, text: ENDING_FALLBACK, quote: '……', recentIds: game.recentEndingIds };
   }
   game.recentEndingIds = ending.recentIds;
   game.report.endingId = ending.id;
   game.report.endingText = ending.text;
+  game.report.quote = ending.quote;
   arm(game, [cueFields(game, {
     kind: 'reveal', seat: 0, roleId: 'host', timeoutMs: TIMEOUTS.reveal, maxChars: ending.text.length,
     line: ending.text, outcome: game.report.outcome, received: game.report.received,

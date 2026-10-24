@@ -7,7 +7,20 @@ import { createGame, advance, view } from './game.mjs';
 import { connectLinx } from './linx.mjs';
 import { createMixinHub } from './mixin-http.mjs';
 
-const assets = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/audio.js': ['audio.js', 'text/javascript'], '/recorder.js': ['recorder.js', 'text/javascript'] };
+const assets = {
+  '/': ['index.html', 'text/html'],
+  '/app.js': ['app.js', 'text/javascript'],
+  '/style.css': ['style.css', 'text/css'],
+  '/audio.js': ['audio.js', 'text/javascript'],
+  '/recorder.js': ['recorder.js', 'text/javascript'],
+  '/mixin': ['mixin/index.html', 'text/html'],
+  '/mixin/': ['mixin/index.html', 'text/html'],
+  '/mixin/index.html': ['mixin/index.html', 'text/html'],
+  '/mixin/app.js': ['mixin/app.js', 'text/javascript'],
+  '/mixin/style.css': ['mixin/style.css', 'text/css'],
+  '/mixin/audio.js': ['mixin/audio.js', 'text/javascript'],
+  '/mixin/logic.js': ['mixin/logic.js', 'text/javascript'],
+};
 
 export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice = connectLinx } = {}) {
   const sessions = new Map();

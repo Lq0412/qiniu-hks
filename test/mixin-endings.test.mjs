@@ -181,6 +181,7 @@ test('player braces are stripped and do not freeze the ending', async () => {
     const view = await playScript(broken, caughtScript);
     assert.equal(broken.game.phase, 'result');
     assert.equal(view.report.endingText, ENDING_FALLBACK);
+    assert.equal(view.report.quote, '……');
     assert.equal(view.report.endingId, null);
     assert.deepEqual(broken.game.recentEndingIds, []);
     assert.equal(errors.length > 0, true);
