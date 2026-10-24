@@ -644,7 +644,7 @@ function beginRoundAi(game, now) {
 }
 
 function beginPlayer(game, now) {
-  game.note = '轮到你了，15 秒。';
+  game.note = `轮到你了，${TIMEOUTS.playerHard / 1000} 秒。`;
   game.deadlineAt = now + TIMEOUTS.playerHard;
 }
 

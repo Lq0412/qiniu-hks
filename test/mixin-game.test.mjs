@@ -574,3 +574,13 @@ test('voice voting retains its original lock and phase deadlines', async () => {
   session.tick(1);
   assert.equal(session.game.voteLocked, true);
 });
+
+
+test('player countdown copy matches the actual twenty-second deadline', async () => {
+  const session = demoSession();
+  await drive(session, caughtScript, 'round_player');
+  const game = session.view();
+  const seconds = (game.deadlineAt - session.now()) / 1000;
+  assert.equal(seconds, 20);
+  assert.equal(game.note, `轮到你了，${seconds} 秒。`);
+});
