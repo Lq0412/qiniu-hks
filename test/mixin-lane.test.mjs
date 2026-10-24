@@ -82,10 +82,13 @@ test('a game aborts presynth and reuses the same socket', async () => {
     assert.equal(manifest.lines.filter(item => item.kind === 'tts').length, 1);
     assert.match(logs.join('\n'), /预合成让给对局：已写 1 句/);
     lane.releaseGame();
-    assert.equal(lane.mode, 'idle');
+    assert.equal(lane.mode, 'presynth');
+    await waitFor(() => link.pending.length === 1);
     const again = await lane.acquireForGame();
     assert.equal(again, link);
     assert.equal(opened, 1);
+    assert.equal(link.aborts, 2);
+    lane.close();
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -208,4 +211,37 @@ test('增量预合成跳过已有文件，打断和失败保留清单', async ()
     await assert.rejects(runPresynth({ dir, link, catalog: [...CATALOG, { id: 'new', text: '新句', roleId: 'host' }], log() {} }));
     assert.deepEqual(JSON.parse(await readFile(path.join(dir, 'manifest.json'), 'utf8')), manifest);
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('对局结束续预合成只补剩余句，再开局仍用同一连接', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'lane-resume-'));
+  const link = controllableLink();
+  let opened = 0;
+  let calls = 0;
+  const detect = link.detect;
+  link.detect = () => { calls += 1; return detect(); };
+  const lane = createAudioLane({ dir, catalog: CATALOG, log() {}, openLink() { opened += 1; return link; } });
+  try {
+    lane.warmupBackground();
+    await waitFor(() => calls === 1);
+    link.finish();
+    await waitFor(() => calls === 2);
+    await lane.acquireForGame();
+    lane.releaseGame();
+    await waitFor(() => calls === 3);
+    assert.equal(opened, 1);
+    link.finish();
+    await waitFor(() => calls === 4);
+    await lane.acquireForGame();
+    assert.equal(link.aborts, 2);
+    lane.releaseGame();
+    await waitFor(() => calls === 5);
+    link.finish();
+    await waitFor(() => lane.mode === 'idle');
+    assert.equal(calls, 5);
+    assert.equal(opened, 1);
+    assert.equal(link.connectCount, 1);
+    const manifest = JSON.parse(await readFile(path.join(dir, 'manifest.json'), 'utf8'));
+    assert.equal(manifest.lines.filter(item => item.kind === 'tts').length, 3);
+  } finally { lane.close(); await rm(dir, { recursive: true, force: true }); }
 });

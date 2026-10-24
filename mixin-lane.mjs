@@ -70,7 +70,9 @@ export function createAudioLane({ openLink, dir, log = () => {}, timeoutMs = 100
       return ensure();
     },
     releaseGame() {
-      if (mode === 'game') mode = 'idle';
+      if (mode !== 'game') return;
+      mode = 'idle';
+      this.warmupBackground();
     },
     close() {
       cancel = true;
