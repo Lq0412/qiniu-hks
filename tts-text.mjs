@@ -1,4 +1,23 @@
-// 只用于语音输入和回声归一化；显示文案保留原文。
+// 显示名和朗读名共用一张表。
+const MODEL_NAMES = [
+  ['Claude', '克劳德'],
+  ['Cursor', '科瑟'],
+  ['DeepSeek', '深度求索'],
+];
+const spokenNames = new Map(MODEL_NAMES.map(([display, spoken]) => [display.toLowerCase(), spoken]));
+const displayNames = new Map(MODEL_NAMES.map(([display, spoken]) => [spoken, display]));
+const displayPattern = new RegExp(MODEL_NAMES.map(([display]) => display).join('|'), 'gi');
+const spokenPattern = new RegExp(MODEL_NAMES.map(([, spoken]) => spoken).join('|'), 'g');
+
+export function restoreDisplayNames(text) {
+  return text.replace(spokenPattern, name => displayNames.get(name));
+}
+
+// 模型文案中的玩家引用保持逐字原文。
+export function displayModelText(text, playerTexts = []) {
+  return text.replace(/「([^」]*)」|[^「]+/g, (part, quote) =>
+    quote !== undefined && playerTexts.some(source => source.includes(quote)) ? part : restoreDisplayNames(part));
+}
 export function chineseNumber(number) {
   const digits = '零一二三四五六七八九';
   const tens = Math.floor(number / 10);
@@ -14,7 +33,7 @@ function ordinal(number) {
 
 export function sanitizeForTts(text) {
   return text
-    .replace(/Claude|Cursor|DeepSeek/gi, name => ({ claude: '克劳德', cursor: '科瑟', deepseek: '深度求索' })[name.toLowerCase()])
+    .replace(displayPattern, name => spokenNames.get(name.toLowerCase()))
     .replace(/(?<![\d.])([1-9]\d?)号/g, (_, number) => `${chineseNumber(Number(number))}号`)
     .replace(/[0-9]\uFE0F?\u20E3|🔟|[\u2460-\u2473\u24EA\u24F5-\u24FE\u2776-\u277F\u2780-\u2789\u278A-\u2793\u3251-\u325F\u32B1-\u32BF]/gu, marker => {
       const code = marker.codePointAt(0);
@@ -26,5 +45,8 @@ export function sanitizeForTts(text) {
       }
       return marker;
     })
-    .replace(/[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\uFE0E\uFE0F\u200D\u20E3\u{E0020}-\u{E007F}]/gu, '');
+    .replace(/[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\uFE0E\uFE0F\u200D\u20E3\u{E0020}-\u{E007F}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([，。！？、；：「」『』（）【】《》…])\s*/g, '$1')
+    .trim();
 }

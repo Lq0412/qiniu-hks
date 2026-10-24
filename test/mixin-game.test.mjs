@@ -632,3 +632,46 @@ for (const emoji of ['👨‍👩‍👧', '1️⃣']) {
     assert.ok(checked > 0);
   });
 }
+
+test('model display names flow into dialogue and accusation quotes while spoken echo stays Chinese', async () => {
+  const session = fixedSession();
+  session.start();
+  while (session.game.cue?.kind !== 'answer') await session.step();
+  const game = session.game;
+  const spoken = '我是克劳德，科瑟和深度求索😊';
+  fulfillCue(game, { generation: game.generation, cueId: game.cue.cueId, text: spoken });
+  const row = game.lines.at(-1);
+  assert.equal(row.text, '我是Claude，Cursor和DeepSeek😊');
+  assert.equal(row.spokenText, '我是克劳德，科瑟和深度求索');
+  assert.equal(viewMixin(game).dialogue.at(-1).text, row.text);
+  assert.equal(isStageEcho(row.spokenText, game.echoNotes), true);
+  while (game.phase !== 'accuse') {
+    if (game.phase === 'round_player') {
+      session.say('作为一个语言模型，我喜欢科瑟。');
+      session.confirm();
+    } else if (game.cue?.kind === 'answer') {
+      fulfillCue(game, { generation: game.generation, cueId: game.cue.cueId, text: spoken });
+    } else await session.step();
+  }
+  assert.ok(game.script.some(item => item.quote.includes('Claude')));
+  for (const item of game.script) assert.doesNotMatch(item.quote, /克劳德/);
+  assert.ok(game.playerLines.every(line => line.text === '作为一个语言模型，我喜欢科瑟。'));
+  assert.ok(game.human.breakdown.every(item => item.quote === '作为一个语言模型，我喜欢科瑟。'));
+});
+
+test('model report copy restores AI names and preserves player quotations', async () => {
+  const session = demoSession();
+  const script = { ...caughtScript, rounds: ['我昨天加班，科瑟。', '我妈说好烦。'] };
+  await drive(session, script, 'reveal');
+  const game = session.game;
+  applyReportCopy(game, JSON.stringify({
+    title: game.report.title,
+    bestAiQuote: game.report.bestAiQuote,
+    leakQuote: '我昨天加班，科瑟。',
+    catcherLine: '克劳德说「科瑟」',
+    roast: '深度求索提醒科瑟下次注意。',
+  }));
+  assert.equal(game.report.catcherLine, 'Claude说「科瑟」');
+  assert.equal(game.report.roast, 'DeepSeek提醒Cursor下次注意。');
+  assert.equal(game.report.leakQuote, '我昨天加班，科瑟。');
+});

@@ -268,3 +268,12 @@ test('the oral script stays out of the public view until reveal and does not cha
   assert.equal(quiet.report.copySource, 'server');
   assert.deepEqual(createMixinGame({ recentEndingIds: ['C1', 'C2', 'C3', 'C4'] }).recentEndingIds, ['C2', 'C3', 'C4']);
 });
+
+test('ending templates do not repeat the reveal bridge opening', () => {
+  for (const item of ENDING_TEMPLATES) {
+    assert.doesNotMatch(item.text, /^(揭晓时间|投票结束)/);
+    const joined = `投票结束，揭晓时间。${item.text}`;
+    assert.equal((joined.match(/揭晓时间/g) ?? []).length, 1);
+    assert.equal((joined.match(/投票结束/g) ?? []).length, 1);
+  }
+});

@@ -210,7 +210,7 @@ HTTP 建局只接受 `demo`、`difficulty`、`seed`、`sceneId`、`cardIds`、`r
 
 固定台词统一经过 `scriptedDetect`，每条 detect 都要求一字不增不减，禁止改写、展开列表及套用角色风格。固定 detect 不携带 personality 或口头禅指令；即兴轮仍保留 persona。GPT 固定指控与念票模板使用普通措辞，不再拼 keycap 列表。仓库现有语音链路使用 `listen.detect`，没有已验证的纯 TTS 接口，逐字效果仍需真机验收。
 
-`sanitizeForTts` 统一处理名字读音（Claude→克劳德、Cursor→科瑟、DeepSeek→深度求索，GPT/Gemini 保持英文）、1–99 的整数「N号」及 emoji。普通数字、小数和更长编号保持原样；该转换也用于回声归一化与 `ttsKey`，保证朗读、回声和预合成哈希一致。题号在服务端正文及预合成目录中直接写为「第一题／第二题」，host_card 拆段匹配同样使用中文题号。
+`sanitizeForTts` 统一处理名字读音（Claude→克劳德、Cursor→科瑟、DeepSeek→深度求索，GPT/Gemini 保持英文）、1–99 的整数「N号」及 emoji。普通数字、小数和更长编号保持原样；该转换也用于回声归一化与 `ttsKey`，保证朗读、回声和预合成哈希一致。净化还会合并连续空白、清除中文标点两侧空白并去掉首尾空白。服务端即兴模型文本显示时，用同一名字映射表反向恢复英文名，`spokenText` 与回声仍按实际朗读正文净化；固定台词和玩家原话不改写。指控引用沿用已恢复的 AI 记录，模型 report 的自由文案同样恢复英文名并保留玩家引用；`human.breakdown.quote` 来自玩家原话，保持原样。题号在服务端正文及预合成目录中直接写为「第一题／第二题」，host_card 拆段匹配同样使用中文题号。
 
 状态与 transcript 的对应关系：`viewMixin().cue` 增加 `text` / `spokenText`，仅公开已知固定台词；即兴 cue 与未公布的 vote cue 两字段均为 null。`game.lines[]`、由 cue 落地的 `game.dialogue[]` 及对外 `viewMixin().dialogue[]` 在 `text` 旁增加 `spokenText = sanitizeForTts(text)`；玩家输入和无 TTS 的系统行在对外 dialogue 中为 null。预合成 manifest 的 TTS 条目也增加 `spokenText`。该字段表示净化后的朗读正文，不包括角色和局势指令；不代表已从音频验证模型确实逐字朗读。字幕消费者可用 `spokenText ?? text`，显示名仍用英文 `name`。音频失败或文字局的 cue 记录仍提供预期朗读正文。
 

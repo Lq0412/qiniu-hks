@@ -2,7 +2,7 @@
 // 本模块不打开灵矽、不申请麦克风。文字模式把 hello 视为已满足；真连接以后只读 phase 和 generation。
 
 import { randomUUID } from 'node:crypto';
-import { chineseNumber, sanitizeForTts } from './tts-text.mjs';
+import { chineseNumber, displayModelText, sanitizeForTts } from './tts-text.mjs';
 import { cardById, drawCards, replyFor, sceneById, SCENES } from './mixin-bank.mjs';
 import { ENDING_FALLBACK, renderEnding } from './mixin-endings.mjs';
 import { accusationLine, HOST_NUDGE, HOST_RULES, HOST_SKIP_PLAYER, HOST_WRAP_EARLY, HOST_WRAP_LATE, openingLine, renderBrief, stageDirection, toneFor } from './mixin-prompts.mjs';
@@ -405,10 +405,10 @@ export function applyReportCopy(game, reportJson) {
   const corpus = spokenPlayerTexts(game);
   const best = quoteField(report.bestAiQuote, corpus, corpus.length > 0);
   const leak = quoteField(report.leakQuote, corpus, false);
-  const catcherLine = shortField(report.catcherLine, 30, 'catcherLine');
+  const catcherLine = displayModelText(shortField(report.catcherLine, 30, 'catcherLine'), corpus);
   const embedded = catcherLine.match(/「([^」]+)」/);
   if (embedded) assertVerbatim(embedded[1], [...corpus, ...aiTexts(game)]);
-  const roast = shortField(report.roast, 40, 'roast');
+  const roast = displayModelText(shortField(report.roast, 40, 'roast'), corpus);
   game.report = { ...game.report, title: report.title, bestAiQuote: best, leakQuote: leak, catcherLine, roast, copySource: 'model' };
   return viewMixin(game);
 }
@@ -832,7 +832,7 @@ function recordCue(game, cue, text, now, via, voiceUsed) {
   const spoken = cue.kind === 'vote'
     ? Array.from(graphemes.segment(source), part => part.segment).slice(0, cue.maxChars).join('')
     : source.slice(0, cue.maxChars);
-  const row = { seat: cue.seat, roleId: cue.roleId, name: cue.name, text: spoken, spokenText: sanitizeForTts(spoken), round: game.round, phase: game.phase, at: now, kind: cue.kind, voiceUsed: voiceUsed ?? null, via };
+  const row = { seat: cue.seat, roleId: cue.roleId, name: cue.name, text: cue.line ? spoken : displayModelText(spoken, spokenPlayerTexts(game)), spokenText: sanitizeForTts(spoken), round: game.round, phase: game.phase, at: now, kind: cue.kind, voiceUsed: voiceUsed ?? null, via };
   game.lines.push(row);
   game.dialogue.push(row);
   remember(game, spoken);
