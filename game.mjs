@@ -12,7 +12,7 @@ export function addSpeech(game,text) {
 }
 export function evaluate(game,stage,{question,revision,quote,feedback}) {
   if(stage!==game.stage||game.status!=='playing'||question!==stage+1||!game.pending||revision!==game.pending.revision)throw new GameError('题目或回答已更新，请先读取状态。');
-  if(typeof quote!=='string'||quote.length<2||!game.pending.text.includes(quote))throw new GameError('引用必须逐字来自本次回答。');
+  if(typeof quote!=='string'||!quote.trim()||!game.pending.text.includes(quote))throw new GameError('引用必须逐字来自本次回答，短回答可以引用全文。');
   if(typeof feedback!=='string'||!feedback.trim()||feedback.length>100)throw new GameError('反馈长度不合法。');
   game.feedback={text:feedback,revision:game.revision};return view(game);
 }
@@ -32,7 +32,7 @@ export function saveReport(game,stage,reportJson) {
   for(let i=0;i<3;i++){
     const d=report.dimensions[i],answer=game.answers.find(a=>a.question===d?.question-1);
     if(d?.name!==dimensions[i]||typeof d.verdict!=='string'||!d.verdict.trim()||d.verdict.length>40||typeof d.comment!=='string'||!d.comment.trim()||d.comment.length>200)throw new GameError('维度格式不正确。');
-    if(!Number.isInteger(d.question)||!answer||typeof d.quote!=='string'||d.quote.length<4||!answer.text.includes(d.quote))throw new GameError('报告引用不在确认回答中，请逐字摘录后重新提交。');
+    if(!Number.isInteger(d.question)||!answer||typeof d.quote!=='string'||!d.quote.trim()||!answer.text.includes(d.quote))throw new GameError('报告引用不在确认回答中，请逐字摘录后重新提交；短回答可以引用全文。');
   }
   // Keep only validated presentation fields; model output is never executable UI.
   game.report={model:report.model,tier:report.tier,headline:report.headline,summary:report.summary,roast:report.roast,advice:report.advice,dimensions:report.dimensions.map(d=>({name:d.name,verdict:d.verdict,comment:d.comment,question:d.question,quote:d.quote}))};
