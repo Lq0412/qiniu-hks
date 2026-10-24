@@ -1,0 +1,47 @@
+:root {
+  color-scheme: dark;
+  --bg: #07080d;
+  --ink: #f4efe4;
+  --muted: #9aa0b4;
+  --line: rgba(244, 239, 228, 0.14);
+  --card: #f6f1e6;
+  --card-ink: #16140f;
+  --live: #ff4d6a;
+  font-family: "Avenir Next", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.boot {
+  min-height: 100dvh;
+  display: grid;
+  align-content: center;
+  padding: 8vh 8vw;
+}
+
+.eyebrow {
+  margin: 0 0 18px;
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  color: var(--live);
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(64px, 8vw, 112px);
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+}
+
+.tagline {
+  margin: 24px 0 0;
+  font-size: 28px;
+  color: var(--muted);
+}
