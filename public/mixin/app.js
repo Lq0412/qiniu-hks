@@ -20,6 +20,7 @@ import {
   randomAlias,
   randomSeed,
   remainingMs,
+  roundDialogue,
   sanitizeView,
   screenOf,
   sessionRecord,
@@ -461,9 +462,15 @@ function tableHtml() {
     <div class="seats" id="seats"></div>
     <section class="topic" id="topic"></section>
     <section class="lower" aria-live="polite">
+      <section class="history" aria-label="本轮发言记录" aria-live="off">
+        <h2>本轮发言 <small>向上滚动回看</small></h2>
+        <ol id="history-lines" tabindex="0"></ol>
+      </section>
+      <div class="caption">
       <p class="who" id="who"></p>
       <p class="subtitle" id="subtitle"></p>
       <ol class="ballots" id="ballots"></ol>
+      </div>
     </section>
     <section class="dock" id="dock"></section>
   </main>`;
@@ -511,6 +518,7 @@ function paintTable() {
   paintSeats();
   paintTopic();
   paintSubtitle();
+  paintHistory();
   paintBallots(document.querySelector('#ballots'));
   paintDock();
 }
@@ -814,3 +822,15 @@ async function boot() {
 }
 
 boot();
+
+
+function paintHistory() {
+  const el = document.querySelector('#history-lines');
+  if (!el) return;
+  const html = roundDialogue(state.game).map(line => `<li><span class="avatar" aria-hidden="true">${esc(line.seat === 0 ? '主持' : String(line.seat).padStart(2, '0'))}</span><div><strong>${esc(line.name)}</strong><p>${esc(line.text)}</p></div></li>`).join('');
+  if (el.dataset.html !== html) {
+    el.dataset.html = html;
+    el.innerHTML = html;
+    el.scrollTop = el.scrollHeight;
+  }
+}

@@ -435,3 +435,8 @@ export function paintShareCard(ctx, model) {
   }
   return { width, height, lines };
 }
+
+
+export function roundDialogue(game) {
+  return (game?.dialogue ?? []).filter(line => line.round === (game.round ?? 0));
+}

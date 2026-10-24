@@ -27,6 +27,7 @@ import {
   randomAlias,
   readBeat,
   remainingMs,
+  roundDialogue,
   sanitizeView,
   screenOf,
   sessionRecord,
@@ -389,4 +390,17 @@ test('reduced motion keeps player and voting timers at real-time speed', () => {
     const intent = autoIntent({ phase, cue: null }, { readScale: 0.15 });
     assert.equal(intent.delay, intent.ms, `${phase}: one game second must take one real second`);
   }
+});
+
+
+test('round dialogue keeps every current-round line in speech order', () => {
+  const lines = [
+    { round: 0, name: '群主', text: '开场' },
+    { round: 1, name: '柯老师', text: '上一轮' },
+    { round: 2, name: '深思哥', text: '<这句也保留>' },
+    { round: 2, name: '五号', text: '我的回答' },
+  ];
+  assert.deepEqual(roundDialogue({ round: 2, dialogue: lines }), lines.slice(2));
+  assert.deepEqual(roundDialogue({ round: 0, dialogue: lines }), lines.slice(0, 1));
+  assert.deepEqual(roundDialogue(null), []);
 });
