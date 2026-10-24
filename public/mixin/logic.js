@@ -440,17 +440,3 @@ export function paintShareCard(ctx, model) {
 export function roundDialogue(game) {
   return (game?.dialogue ?? []).filter(line => line.round === (game.round ?? 0));
 }
-
-
-export function phaseInstruction(game) {
-  const instructions = {
-    intro: '听群主介绍规则，稍后自动发题。',
-    round_ai: '听模型回答；可在本轮记录里回看台词。',
-    round_player: '输入你的回答并确认，装得像一个模型。',
-    round_wrap: '听群主串场，稍后自动进入下一阶段。',
-    accuse: '听模型互相质疑；想辩解可输入台词并点「打断」。',
-    defense: '输入辩解并确认，也可以先投给可疑的模型。',
-    vote: game?.voteLocked ? '投票已结束，听模型念票，等待揭晓。' : '点击下方模型投票，选出你怀疑的人类。',
-  };
-  return instructions[game?.phase] ?? '';
-}
