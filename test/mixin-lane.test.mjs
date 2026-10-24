@@ -80,7 +80,6 @@ test('a game aborts presynth and reuses the same socket', async () => {
     assert.deepEqual(names.sort(), ['host-a.mxop', 'manifest.json', 'reveal-sfx.wav']);
     const manifest = JSON.parse(await readFile(path.join(dir, 'manifest.json'), 'utf8'));
     assert.equal(manifest.lines.filter(item => item.kind === 'tts').length, 1);
-    assert.match(logs.join('\n'), /口播「欢迎来到模型群」/);
     assert.match(logs.join('\n'), /预合成让给对局：已写 1 句/);
     lane.releaseGame();
     assert.equal(lane.mode, 'idle');

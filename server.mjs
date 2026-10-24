@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { deviceConfig, ota } from './linx-config.mjs';
@@ -26,6 +27,24 @@ const assets = {
   '/mixin/audio.js': ['mixin/audio.js', 'text/javascript'],
   '/mixin/logic.js': ['mixin/logic.js', 'text/javascript'],
 };
+
+const speechTypes = {
+  '.wav': 'audio/wav',
+  '.mxop': 'application/octet-stream',
+  '.json': 'application/json; charset=utf-8',
+};
+
+function speechAsset(speechDir, pathname) {
+  const match = /^\/mixin\/audio\/([A-Za-z0-9][A-Za-z0-9._-]{0,80})$/.exec(pathname);
+  if (!match) return null;
+  const name = match[1];
+  const type = speechTypes[path.extname(name).toLowerCase()];
+  if (!type) return null;
+  const root = path.resolve(speechDir);
+  const file = path.resolve(root, name);
+  if (file !== path.join(root, name)) return null;
+  return { file, type };
+}
 
 export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice = connectLinx, mixinCredentials = null, openAudioLink = null, audioDir = null, log = console.log, presynthCatalog = undefined } = {}) {
   const sessions = new Map();
@@ -60,6 +79,19 @@ export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice =
         const data = await readFile(new URL(`./public/${file}`, import.meta.url));
         res.writeHead(200, { 'Content-Type': `${type}; charset=utf-8`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; worker-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'" });
         return res.end(data);
+      }
+      if (req.method === 'GET') {
+        const speech = speechAsset(speechDir, path);
+        if (speech) {
+          try {
+            const data = await readFile(speech.file);
+            res.writeHead(200, { 'Content-Type': speech.type, 'Content-Length': String(data.length), 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+            return res.end(data);
+          } catch (error) {
+            if (error?.code === 'ENOENT') return json(404, { error: '没有这段音频。' });
+            throw error;
+          }
+        }
       }
       if (path === '/api/health' && req.method === 'GET') return json(200, { ok: true, provider: 'Linx' });
       if (path === '/api/mixin' || path.startsWith('/api/mixin/')) {

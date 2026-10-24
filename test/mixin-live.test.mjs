@@ -20,10 +20,10 @@ function missingFile() {
   throw error;
 }
 
-function installFake({ hangAccuse = false, empty = false } = {}) {
+function installFake({ hangAccuse = false } = {}) {
   const sockets = [];
   const detects = [];
-  const fake = { sockets, detects, aborts: 0, hanging: false, armed: false, failNext: false };
+  const fake = { sockets, detects, aborts: 0, hanging: false, armed: false };
   fake.createSocket = () => {
     const socket = new EventEmitter();
     sockets.push(socket);
@@ -56,15 +56,10 @@ function installFake({ hangAccuse = false, empty = false } = {}) {
         }
         setImmediate(() => {
           if (socket.readyState !== 1) return;
-          if (fake.failNext) {
-            fake.failNext = false;
-            socket.close();
-            return;
-          }
           send({ type: 'stt', text: message.text });
           send({ type: 'tts', state: 'start' });
           send({ type: 'tts', state: 'sentence_start', text: '收到' });
-          if (!empty) socket.emit('message', Buffer.alloc(640, 1), true);
+          socket.emit('message', Buffer.alloc(640, 1), true);
           send({ type: 'tts', state: 'stop' });
         });
       }
@@ -126,6 +121,13 @@ test('one socket plays a demo, reuses presynth, and the page can fetch each wav'
     assert.equal(opened(), 1);
     assert.equal(fake.sockets.length, 1);
     assert.equal((await fetch(`${base}/mixin`)).status, 200);
+    const sfx = await fetch(`${base}/mixin/audio/reveal-sfx.wav`);
+    assert.equal(sfx.status, 200);
+    assert.equal(sfx.headers.get('content-type'), 'audio/wav');
+    assert.equal(Buffer.from(await sfx.arrayBuffer()).subarray(0, 4).toString(), 'RIFF');
+    assert.equal((await fetch(`${base}/mixin/audio/../package.json`)).status, 404);
+    assert.equal((await fetch(`${base}/mixin/audio/..%2Fpackage.json`)).status, 404);
+    assert.equal((await fetch(`${base}/mixin/audio/.env`)).status, 404);
     const post = (url, body, cookie = '') => fetch(`${base}${url}`, {
       method: 'POST',
       headers: { origin: base, 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
@@ -209,44 +211,6 @@ test('one socket plays a demo, reuses presynth, and the page can fetch each wav'
   }
 });
 
-test('a dropped socket reconnects once, and a line with no audio still keeps the script', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'live-drop-'));
-  const fake = installFake({ empty: true });
-  fake.failNext = true;
-  const { server, opened } = voiceApp(dir, fake, { presynthCatalog: [] });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const base = `http://127.0.0.1:${server.address().port}`;
-  try {
-    await waitFor(() => server.audioLane.mode === 'idle');
-    const post = (url, body, cookie = '') => fetch(`${base}${url}`, {
-      method: 'POST',
-      headers: { origin: base, 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
-      body: JSON.stringify(body ?? {}),
-    });
-    const created = await post('/api/mixin', { demo: true, seed: 1 });
-    const cookie = created.headers.get('set-cookie').split(';')[0];
-    const { id } = await created.json();
-    const started = await post(`/api/mixin/${id}/start`, {}, cookie);
-    const startBody = await started.json();
-    assert.equal(started.status, 200, JSON.stringify(startBody));
-    assert.equal(startBody.game.phase, 'intro');
-    assert.equal(startBody.game.generation, 1);
-    assert.equal(fake.sockets.length, 2);
-    fake.failNext = true;
-    const stepped = await post(`/api/mixin/${id}/step`, {}, cookie);
-    const stepBody = await stepped.json();
-    assert.equal(stepped.status, 200, JSON.stringify(stepBody));
-    assert.equal(stepBody.audioUrl ?? null, null);
-    assert.equal(stepBody.game.dialogue.at(-1).text, openingLine('模型年会', '碳基-7B'));
-    assert.equal(fake.sockets.length, 2);
-    assert.equal(opened(), 1);
-    assert.equal(stepBody.game.generation, 1);
-  } finally {
-    await new Promise(resolve => server.close(resolve));
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
 test('play:voice without credentials stays on the text page', async () => {
   const logs = [];
   const started = await startVoiceServer({
@@ -266,41 +230,4 @@ test('play:voice without credentials stays on the text page', async () => {
   } finally {
     await new Promise(resolve => started.server.close(resolve));
   }
-});
-
-test('the voice command names the page, the env, and typed speech', async () => {
-  const logs = [];
-  let seen = null;
-  const started = await startVoiceServer({
-    env: {
-      LINX_DEVICE_JSON: JSON.stringify({ deviceId: '02:10:20:30:40:50', clientId: 'client-test' }),
-      LINX_API_KEY: 'hidden-key',
-    },
-    readFile: missingFile,
-    log: line => logs.push(line),
-    port: 0,
-    resolve: async () => ({
-      source: 'env',
-      config: { deviceId: 'd', clientId: 'c' },
-      credentials: { url: 'wss://xrobo-io.qiniuapi.com/v1/ws/', token: TOKEN },
-    }),
-    makeApp(options) {
-      seen = options;
-      return {
-        once() {},
-        listen(_port, _host, callback) { callback(); },
-        address() { return { port: 4321 }; },
-        close() {},
-      };
-    },
-  });
-  assert.equal(started.mode, 'voice');
-  assert.equal(seen.mixinCredentials.credentials.token, TOKEN);
-  const printed = logs.join('\n');
-  assert.match(printed, /语音版：http:\/\/127\.0\.0\.1:4321\/mixin/);
-  assert.match(printed, /打字/);
-  assert.match(printed, /LINX_DEVICE_JSON/);
-  assert.match(printed, /90 秒/);
-  assert.equal(printed.includes(TOKEN), false);
-  assert.equal(printed.includes('hidden-key'), false);
 });

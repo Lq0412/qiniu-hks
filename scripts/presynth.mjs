@@ -76,8 +76,7 @@ export async function runPresynth({
       const entry = ttsManifestEntry(item, voiceId);
       await writeFile(path.join(dir, entry.file), bytes);
       lines.push(entry);
-      const spoken = typeof result.spoken === 'string' ? result.spoken.trim() : '';
-      log(`${entry.file}  bytes=${bytes.length}  pcm=${result.pcm.length}  口播「${spoken || '（无字幕）'}」`);
+      log(`${entry.file}  bytes=${bytes.length}  pcm=${result.pcm.length}`);
     }
   } finally {
     if (!existingLink) link.close();
