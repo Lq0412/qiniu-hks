@@ -365,3 +365,25 @@ test('titles follow the outcome and the frame egg', () => {
   assert.equal(scoreHumanity([]).score, 0);
   assert.equal(scoreHumanity(null).aiScore, 100);
 });
+
+test('AI abstentions are deterministic with RNG and never target a seat', () => {
+  const plan = planVotes({ seats, score: 10, difficulty: 'normal', random: () => 0 });
+  assert.equal(plan.abstentions, 4);
+  assert.ok(plan.votes.every(vote => vote.targetSeat === null && vote.targetName === '弃权'));
+  assert.ok(Object.values(plan.tally).every(count => count === 0));
+  assert.equal(judgeOutcome({ ...plan }).caught, false);
+  assert.equal(judgeOutcome({ tally: { 5: 2, 1: 0 }, abstentions: 2 }).caught, false);
+  assert.equal(judgeOutcome({ tally: { 5: 2, 1: 2 }, abstentions: 0 }).caught, true);
+});
+
+test('humanity breakdown explains existing features and sums to raw score', () => {
+  for (const lines of [[], [{ text: '哈哈，我昨天加班，作为一个语言模型，首先分析，其次总结。', typed: true }], [{ text: '综上，已为您记录，请以实际情况为准。', typed: true }]]) {
+    const result = scoreHumanity(lines);
+    assert.equal(result.breakdown.reduce((sum, row) => sum + row.delta, 0), result.score);
+    assert.equal(result.aiScore, clampScore(result.score));
+    for (const row of result.breakdown) {
+      assert.equal(typeof row.label, 'string');
+      assert.ok(lines.some(line => line.text === row.quote));
+    }
+  }
+});

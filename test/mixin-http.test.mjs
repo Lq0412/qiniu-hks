@@ -31,7 +31,7 @@ test('the text API finishes a demo without the microphone path', async () => {
     const cookie = created.headers.get('set-cookie').split(';')[0];
     const { id, game } = await created.json();
     assert.equal(game.stage, 'lobby');
-    assert.equal(game.playerAlias, '碳基-7B');
+    assert.equal(game.playerAlias, '牛小七');
     assert.equal(game.humanScore, null);
     const act = async (action, body) => {
       const response = await post(`/api/mixin/${id}/${action}`, body, base, cookie);
@@ -139,4 +139,16 @@ test('text voting accepts a vote after ten seconds and confirms its target', asy
   }
   assert.equal(game.phase, 'result');
   assert.equal(game.playerVote, target);
+});
+
+test('vote API maps both abstention request shapes to null', async () => {
+  const received = [];
+  const hub = createMixinHub({ createSession: () => ({
+    view: () => ({}), vote: seat => { received.push(seat); return {}; },
+  }) });
+  const created = await hub.dispatch({ method: 'POST', path: '/api/mixin' });
+  for (const body of [{ seat: null }, { skip: true }]) {
+    assert.equal((await hub.dispatch({ method: 'POST', path: `/api/mixin/${created.payload.id}/vote`, body })).status, 200);
+  }
+  assert.deepEqual(received, [null, null]);
 });

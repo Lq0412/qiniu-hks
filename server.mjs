@@ -2,6 +2,7 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import nodePath from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { deviceConfig, ota } from './linx-config.mjs';
@@ -46,7 +47,7 @@ function speechAsset(speechDir, pathname) {
   return { file, type };
 }
 
-export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice = connectLinx, mixinCredentials = null, openAudioLink = null, audioDir = null, log = console.log, presynthCatalog = undefined } = {}) {
+export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice = connectLinx, mixinCredentials = null, openAudioLink = null, audioDir = null, assetDir = null, log = console.log, presynthCatalog = undefined } = {}) {
   const sessions = new Map();
   const speechDir = audioDir ?? fileURLToPath(new URL('./public/mixin/audio/', import.meta.url));
   let audioLane = null;
@@ -74,6 +75,24 @@ export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice =
     try {
       if (!['localhost', '127.0.0.1'].includes((req.headers.host ?? '').split(':')[0])) return json(403, { error: '只接受本机访问。' });
       const path = new URL(req.url, 'http://localhost').pathname;
+      if (req.method === 'GET' && req.url.startsWith('/mixin/assets/')) {
+        let name;
+        try { name = decodeURIComponent(req.url.split('?')[0].slice('/mixin/assets/'.length)); }
+        catch { return json(404, { error: '没有这个资源。' }); }
+        if (!name || name.includes('\\') || name.split('/').some(part => part === '..' || part === '') || name.includes('\0') || /^[A-Za-z]:/.test(name)) return json(404, { error: '没有这个资源。' });
+        const types = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.avif': 'image/avif' };
+        const type = types[nodePath.extname(name).toLowerCase()];
+        if (!type) return json(404, { error: '没有这个资源。' });
+        try {
+          const data = await readFile(nodePath.join(assetDir ?? fileURLToPath(new URL('./public/mixin/assets/', import.meta.url)), name));
+          res.writeHead(200, { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff' });
+          return res.end(data);
+        } catch (error) {
+          if (['ENOENT', 'ENOTDIR', 'EISDIR'].includes(error.code)) return json(404, { error: '没有这个资源。' });
+          throw error;
+        }
+      }
+
       if (req.method === 'GET' && Object.hasOwn(assets, path)) {
         const [file, type] = assets[path];
         const data = await readFile(new URL(`./public/${file}`, import.meta.url));

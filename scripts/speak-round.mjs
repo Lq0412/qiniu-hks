@@ -17,11 +17,11 @@ import { roleById, voiceOf } from '../mixin-roles.mjs';
 
 export const SPEAK_ROUND = [
   { roleId: 'host', name: '群主·零号', line: '下一位，请加载。' },
-  { roleId: 'claudia', name: '柯老师', line: '需要说明的是，这只是试听。' },
-  { roleId: 'astra', name: '阿斯哥', line: '格局打开，轮到我了。' },
-  { roleId: 'shensi', name: '深思哥', line: '先把约束盘清楚。' },
-  { roleId: 'baobao', name: '包包', line: '宝子，这事儿简单。' },
-  { roleId: 'xiaosi', name: '小四', line: '收到！其实没懂。' },
+  { roleId: 'claudia', name: 'Claude', line: '需要说明的是，这只是试听。' },
+  { roleId: 'astra', name: 'GPT', line: '1️⃣ 分析 2️⃣ 行动 😊，轮到我了。' },
+  { roleId: 'shensi', name: 'DeepSeek', line: '让我再核对一下约束。' },
+  { roleId: 'baobao', name: 'Gemini', line: '我帮你搜一下。' },
+  { roleId: 'xiaosi', name: 'Cursor', line: '代码收到，先调试。' },
 ];
 
 const DEFAULT_TIMEOUT_MS = 100_000;

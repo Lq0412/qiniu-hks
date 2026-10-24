@@ -79,7 +79,8 @@ export async function runPresynth({
     await writeFile(path.join(dir, 'reveal-sfx.wav'), revealSfxWav());
     for (const item of catalog) {
       if (shouldStop()) { stopped = true; break; }
-      const old = lines.find(entry => entry.id === item.id && entry.text === item.text && entry.voiceId === voiceId);
+      const entry = ttsManifestEntry(item, voiceId);
+      const old = lines.find(old => old.id === item.id && old.text === item.text && old.voiceId === voiceId && old.ttsHash === entry.ttsHash);
       if (old) {
         try { await access(path.join(dir, old.file)); continue; }
         catch { /* 文件丢失则补合成 */ }
@@ -95,7 +96,6 @@ export async function runPresynth({
       if (!result.pcm?.length) throw new Error(`这一句没有收到音频：${item.id}`);
       const bytes = encodeMxop(result.pcm);
       if (bytes.length > MAX_FILE_BYTES) throw new Error(`音频过大：${item.id} ${bytes.length} 字节`);
-      const entry = ttsManifestEntry(item, voiceId);
       await writeFile(path.join(dir, entry.file), bytes);
       const index = lines.findIndex(old => old.id === entry.id);
       if (index >= 0) lines[index] = entry;

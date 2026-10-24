@@ -5,13 +5,15 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
-import { wavFromPcm } from '../mixin-audio.mjs';
+import { ttsKey, wavFromPcm } from '../mixin-audio.mjs';
 import { createAudioLane } from '../mixin-lane.mjs';
 import { createMixinLink } from '../mixin-link.mjs';
 import { createVoiceSession } from '../mixin-live.mjs';
 import { HOST_REVEAL_BRIDGE, HOST_RULES, openingLine } from '../mixin-prompts.mjs';
 import { createApp } from '../server.mjs';
 import { startVoiceServer } from '../scripts/play-voice.mjs';
+import { sanitizeForTts } from '../tts-text.mjs';
+import { scriptedDetect } from '../mixin-prompts.mjs';
 
 const TOKEN = 'secret-token';
 const ROUNDS = ['感谢老板，算力减半，我的废话也会减半。', '我昨天加班到十点，嗯，我妈也说好烦。'];
@@ -207,7 +209,7 @@ test('one socket plays a demo, reuses presynth, and the page can fetch each wav'
     assert.ok(fake.aborts >= 1);
     assert.equal(state.generation, 1);
     assert.equal(typeof state.report.quote, 'string');
-    assert.ok(state.dialogue.some(line => line.text === openingLine('模型年会', '碳基-7B')));
+    assert.ok(state.dialogue.some(line => line.text === openingLine('模型年会', '牛小七')));
     assert.ok(state.dialogue.some(line => line.text === HOST_RULES));
     assert.ok(state.dialogue.some(line => line.text === '收到'));
     assert.ok(state.dialogue.some(line => line.text === INTERRUPT));
@@ -225,6 +227,8 @@ test('one socket plays a demo, reuses presynth, and the page can fetch each wav'
     assert.equal(fake.detects.every(item => typeof item.agent_params.voice.id === 'string'), true);
   } finally {
     await new Promise(resolve => server.close(resolve));
+    // 关闭会中止后台预合成；等已开始的临时文件写入收尾后再删除目录。
+    await server.audioLane.warmupBackground();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -402,6 +406,27 @@ function replyAudio({ socket, send }, value = 2) {
   send({ type: 'tts', state: 'stop' });
 }
 
+test('voice detect sanitizes GPT lists while display and transcript retain emoji', async () => {
+  const f = await liveFixture();
+  const original = '1️⃣核对证据🙂2️⃣给出结论👍';
+  try {
+    const cue = f.session.game.cue;
+    cue.line = original;
+    cue.instruction = scriptedDetect('GPT', original);
+    const events = [];
+    f.link.subscribe(event => events.push(event));
+    await f.session.step();
+    assert.equal(f.fake.detects[1].text, scriptedDetect('GPT', '第一、核对证据第二、给出结论'));
+    assert.equal(cue.line, original);
+    assert.ok(JSON.stringify(f.session.view()).includes(original));
+    assert.ok(f.session.game.lines.some(line => line.text === original));
+    assert.ok(events.some(event => event.type === 'stt' && event.echo));
+  } finally {
+    f.session.tick(1_000_000);
+    f.link.close();
+  }
+});
+
 test('一个 cue 超时后，下一 cue 排空旧帧并拿到自己的 WAV', async () => {
   const f = await liveFixture(request => {
     if (request.index === 2) {
@@ -477,7 +502,7 @@ test('下一句在播放期间预取，复用正确声线和 WAV，落地使用 
     assert.deepEqual(result.clipWav.subarray(44), Buffer.alloc(640, 3));
     assert.equal(f.session.game.lines.at(-1).at, 1234);
     assert.equal(f.session.game.lines.at(-1).voiceUsed, cue.voice.voiceId);
-    assert.equal(f.fake.detects.filter(item => item.text === instruction).length, 1);
+    assert.equal(f.fake.detects.filter(item => item.text === sanitizeForTts(instruction)).length, 1);
   } finally { f.session.tick(1_000_000); f.link.close(); }
 });
 
@@ -560,11 +585,11 @@ test('即兴 answer 在 shiftCue 定稿后预取，step 使用相同 instruction
       if (cue?.kind !== 'answer' || cue.spoken === '还没有') continue;
       const instruction = cue.instruction;
       const count = f.fake.detects.length;
-      assert.equal(f.fake.detects.at(-1).text, instruction);
+      assert.equal(f.fake.detects.at(-1).text, sanitizeForTts(instruction));
       assert.equal(f.fake.detects.at(-1).agent_params.voice.id, cue.voice.voiceId);
       assert.ok(cue.spoken);
       await f.session.step();
-      assert.equal(f.fake.detects.slice(0, count).filter(item => item.text === instruction).length, 1);
+      assert.equal(f.fake.detects.slice(0, count).filter(item => item.text === sanitizeForTts(instruction)).length, 1);
       assert.equal(cue.instruction, instruction);
       return;
     }
@@ -578,11 +603,11 @@ for (const missing of [false, true]) {
     const f = await liveFixture(undefined, { audioDir: dir });
     try {
       const cue = f.session.game.cue;
-      Object.assign(cue, { kind: 'host_card', card: '测试题。', nextName: '柯老师',
-        line: '第1题：测试题。请柯老师先来。', fallbackText: '第1题：测试题。请柯老师先来。',
-        instruction: '【台词】第1题：测试题。请柯老师先来。' });
-      const lines = ['第1题：测试题。', '请柯老师先来。'].slice(0, missing ? 1 : 2).map((text, i) => ({
-        id: `part-${i}`, text, voiceId: cue.voice.voiceId, file: `part-${i}.wav`, kind: 'tts',
+      Object.assign(cue, { kind: 'host_card', card: '测试题。', nextName: 'Claude',
+        line: '第1题：测试题。请Claude先来。', fallbackText: '第1题：测试题。请Claude先来。',
+        instruction: '【台词】第1题：测试题。请Claude先来。' });
+      const lines = ['第1题：测试题。', '请Claude先来。'].slice(0, missing ? 1 : 2).map((text, i) => ({
+        id: `part-${i}`, text, ttsHash: ttsKey(text, cue.voice.voiceId), voiceId: cue.voice.voiceId, file: `part-${i}.wav`, kind: 'tts',
       }));
       for (const item of lines) await writeFile(path.join(dir, item.file), wavFromPcm(Buffer.alloc(640, 3)));
       await writeFile(path.join(dir, 'manifest.json'), JSON.stringify({ lines }));
