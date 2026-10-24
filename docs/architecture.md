@@ -208,6 +208,20 @@ HTTP 建局只接受 `demo`、`difficulty`、`seed`、`sceneId`、`cardIds`、`r
 
 指控、念票和群主固定台词都由服务端先套成「【台词】」再送 detect，引用用服务端原文。
 
+固定台词统一经过 `scriptedDetect`，每条 detect 都要求一字不增不减，禁止改写、展开列表及套用角色风格。固定 detect 不携带 personality 或口头禅指令；即兴轮仍保留 persona。GPT 固定指控与念票模板使用普通措辞，不再拼 keycap 列表。仓库现有语音链路使用 `listen.detect`，没有已验证的纯 TTS 接口，逐字效果仍需真机验收。
+
+`sanitizeForTts` 统一处理名字读音（Claude→克劳德、Cursor→科瑟、DeepSeek→深度求索，GPT/Gemini 保持英文）、1–99 的整数「N号」及 emoji。普通数字、小数和更长编号保持原样；该转换也用于回声归一化与 `ttsKey`，保证朗读、回声和预合成哈希一致。题号在服务端正文及预合成目录中直接写为「第一题／第二题」，host_card 拆段匹配同样使用中文题号。
+
+状态与 transcript 的对应关系：`viewMixin().cue` 增加 `text` / `spokenText`，仅公开已知固定台词；即兴 cue 与未公布的 vote cue 两字段均为 null。`game.lines[]`、由 cue 落地的 `game.dialogue[]` 及对外 `viewMixin().dialogue[]` 在 `text` 旁增加 `spokenText = sanitizeForTts(text)`；玩家输入和无 TTS 的系统行在对外 dialogue 中为 null。预合成 manifest 的 TTS 条目也增加 `spokenText`。该字段表示净化后的朗读正文，不包括角色和局势指令；不代表已从音频验证模型确实逐字朗读。字幕消费者可用 `spokenText ?? text`，显示名仍用英文 `name`。音频失败或文字局的 cue 记录仍提供预期朗读正文。
+
+前端由队长接入（本次不修改 `public/mixin/`）：
+- `public/mixin/logic.js:166` 的 cue 映射保留新增 `text`、`spokenText`（允许 null）；`:190` 的 dialogue 映射保留 `spokenText`；`:264` 的 `subtitleModel` 用 `line.spokenText ?? line.text` 计算字幕内容和长度。
+- `public/mixin/app.js:660` 的发言气泡和 `:706` 的群主话题字幕使用 `spokenText ?? text`；`:914` 的 transcript 可在原文旁增加朗读正文（不同于原文时显示），保留原文与 emoji。角色标签仍使用 `name`。
+- `public/mixin/` 未发现生成「第1题」的文案，无需前端改题号。上述行号以本次基线为准。
+
+本次修复来自 #29 真机回归：`9ab9897` 将 GPT 的 keycap 列表引入固定指控与投票口头禅，并在 `buildMixinDetect` 新增净化，把 keycap 变成连续「第一、第二、第三、」。对比 `2c282d8`，`scriptedDetect` 本身未变化，仍只有角色、台词和局势，逐字要求仅存在全局 agentPrompt。固定 detect 没有携带 persona，因此不能认定 persona 直接泄漏；可确认的回归诱因是列表正文和净化后的序数形式，以及每条请求缺少逐字约束，不能仅凭代码解释全部模型改写。需要重新运行 presynth（名字、座位读法及题号改变对应哈希），再验收固定台词逐字、名字读音与题号 ASR。
+
+
 ## 结局口播（ADR-008）
 
 [ADR-008 #19](https://github.com/Lq0412/qiniu-hks/issues/19) 规定揭晓口播由服务端生成。`beginReveal` 调用 `mixin-endings.mjs`，把填好的文本放进揭晓 cue，舞台指令是「【台词】」加上这段口播，兜底台词也是这段口播。模型只照念。文案生成不走 LLM，也不走 MCP；语音仍由灵矽照念。

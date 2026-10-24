@@ -27,3 +27,13 @@ test('GPT emoji list echo matches the actual spoken text', () => {
   assert.equal(isStageEcho(spoken, [normalizeEcho(original)]), true);
   assert.equal(isInjectedEcho('我昨天加班到十点', [scriptedDetect('GPT', original)]), false);
 });
+
+test('TTS names and seat numbers share echo normalization, leaving display input intact', () => {
+  const display = 'Claude、Cursor、DeepSeek、GPT、Gemini，我投5号。';
+  const spoken = '克劳德、科瑟、深度求索、GPT、Gemini，我投五号。';
+  assert.equal(sanitizeForTts(display), spoken);
+  assert.equal(isInjectedEcho(spoken, [scriptedDetect('GPT', display)]), true);
+  assert.equal(isInjectedEcho(display, [scriptedDetect('GPT', spoken)]), true);
+  assert.equal(normalizeEcho(display), normalizeEcho(spoken));
+  assert.equal(sanitizeForTts('1号、10号、25号、99号；100号、3.5号、123'), '一号、十号、二十五号、九十九号；100号、3.5号、123');
+});

@@ -1,3 +1,4 @@
+import { sanitizeForTts } from './tts-text.mjs';
 // 预合成音频。mxop 是 16kHz 单声道 Opus 帧，体积比 WAV 小。
 // 浏览器不直接解这个文件；服务端解开后按 PCM 推给页面。
 
@@ -144,6 +145,7 @@ export function ttsManifestEntry(item, voiceId) {
     roleId: item.roleId,
     voiceId,
     text: item.text,
+    spokenText: sanitizeForTts(item.text),
     ttsHash: ttsKey(item.text, voiceId),
     file: `${item.id}.mxop`,
     kind: 'tts',

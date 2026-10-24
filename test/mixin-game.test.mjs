@@ -310,6 +310,9 @@ test('interrupts, votes and stale cues stay inside the phase rules', async () =>
   session.vote(4);
   session.confirm();
   assert.equal(session.game.phase, 'vote');
+  assert.equal(session.view().cue.text, null);
+  assert.equal(session.view().cue.spokenText, null);
+  for (const cue of [session.game.cue, ...session.game.queue]) assert.doesNotMatch(cue.line, /[0-9]\uFE0F?\u20E3/);
   assert.equal(session.vote(3).reason, 'locked');
 
   const accusing = demoSession();
