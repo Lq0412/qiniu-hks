@@ -587,9 +587,9 @@ function paintDock() {
 }
 
 function dockHtml(mode) {
-  if (mode === 'speak') return `${dockClock('秒后自动跳过')}${chipsHtml()}${exampleHtml()}${lineForm('像模型一样回答这张卡', '确认')}${toolRow(true)}<p class="fine">按住说话留给语音版。文字局请打字，松开不会录音。</p>`;
-  if (mode === 'defense') return `${dockClock('秒后进入投票')}${voteRow()}${exampleHtml()}${lineForm('甩一句锅，或只投票', '确认')}${toolRow(false)}`;
-  if (mode === 'interrupt') return `${dockClock('')}${lineForm('打断这句，替自己辩一下', '打断')}${toolRow(false)}`;
+  if (mode === 'speak') return `${dockClock('秒后自动跳过')}${lineForm('像模型一样回答这张卡', '确认')}${chipsHtml()}${toolRow(true)}${exampleHtml()}`;
+  if (mode === 'defense') return `${dockClock('秒后进入投票')}${lineForm('甩一句锅，或只投票', '确认')}${voteRow()}${toolRow(false)}`;
+  if (mode === 'interrupt') return `${lineForm('打断这句，替自己辩一下', '打断')}${toolRow(false)}<p class="note" id="note"></p>`;
   if (mode === 'vote') return `${dockClock('秒后开始念票')}<p class="note" id="note"></p>${voteRow()}`;
   if (mode === 'ballots') return `<div class="dock-head"><p class="note" id="note"></p><p class="fine" id="mine"></p></div>`;
   return `<div class="dock-head"><p class="note" id="note"></p></div>`;
@@ -613,7 +613,7 @@ function lineForm(placeholder, action) {
 }
 
 function toolRow(hint) {
-  return `<div class="row">${hint ? '<button class="ghost" type="button" id="hint">给我灵感</button>' : ''}<button class="hold ghost" type="button" id="hold">按住说话</button></div>`;
+  return `<div class="row">${hint ? '<button class="ghost" type="button" id="hint">给我灵感</button>' : ''}<button class="hold ghost" type="button" id="hold" title="文字模式不会录音。语音版再接上。">按住说话</button></div>`;
 }
 
 function voteRow() {

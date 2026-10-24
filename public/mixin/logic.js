@@ -259,7 +259,7 @@ export function dockMode(game) {
 export function readBeat(kind, text = '') {
   let base = 900;
   if (kind === 'host_open' || kind === 'reveal') base = 2600;
-  else if (kind === 'accuse' || kind === 'rebuttal') base = 2400;
+  else if (kind === 'accuse' || kind === 'rebuttal') base = 5600;
   else if (kind === 'vote' || kind === 'host_card') base = 1800;
   else if (['intro', 'answer', 'wrap', 'speak', 'defense', 'interrupt'].includes(kind)) base = 1400;
   const extra = Math.min(4200, Math.max(0, [...String(text ?? '')].length - 28) * 45);
