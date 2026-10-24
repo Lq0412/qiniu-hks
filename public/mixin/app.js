@@ -602,7 +602,7 @@ function paintDock() {
   for (const button of el.querySelectorAll('[data-vote]')) {
     button.classList.toggle('selected', Number(button.dataset.vote) === state.game.playerVote);
   }
-  const mine = el.querySelector('#mine');
+  const mine = el.querySelector('#mine') || (['vote', 'defense'].includes(mode) && state.game.playerVote != null ? note : null);
   if (mine) {
     const target = state.game.seats.find(seat => seat.seat === state.game.playerVote);
     mine.textContent = target ? `✓ 已投 ${target.name}（${target.seat} 号）` : state.game.voteLocked ? '投票已结束，你未投票' : '你还没投票';
@@ -621,10 +621,10 @@ function paintDock() {
 
 function dockHtml(mode) {
   if (mode === 'speak') return `${dockClock('秒后自动跳过')}${lineForm('像模型一样回答这张卡', '确认')}${chipsHtml()}${toolRow(true)}${exampleHtml()}`;
-  if (mode === 'defense') return `${dockClock('秒后进入投票')}${lineForm('甩一句锅，或只投票', '确认')}${voteRow()}<p class="vote-confirm" id="mine" role="status"></p>${toolRow(false)}`;
+  if (mode === 'defense') return `${dockClock('秒后进入投票')}${lineForm('甩一句锅，或只投票', '确认')}${voteRow()}${toolRow(false)}`;
   if (mode === 'interrupt') return `${lineForm('打断这句，替自己辩一下', '打断')}${toolRow(false)}<p class="note" id="note"></p>`;
-  if (mode === 'vote') return `${dockClock('秒后开始念票')}<p class="note" id="note"></p>${voteRow()}<p class="vote-confirm" id="mine" role="status"></p>`;
-  if (mode === 'ballots') return `<div class="dock-head"><p class="note" id="note"></p><p class="vote-confirm" id="mine" role="status"></p></div>`;
+  if (mode === 'vote') return `${dockClock('秒后开始念票')}<p class="note" id="note"></p>${voteRow()}`;
+  if (mode === 'ballots') return `<div class="dock-head"><p class="note" id="note"></p><p class="fine" id="mine" role="status"></p></div>`;
   return `<div class="dock-head"><p class="note" id="note"></p></div>`;
 }
 
