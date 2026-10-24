@@ -662,13 +662,20 @@ function downloadCard() {
   const canvas = document.querySelector('#card');
   if (!model || !canvas) return;
   paintShareCard(canvas.getContext('2d'), model);
+  const title = String(model.title || '分享卡').replace(/[\\/:*?"<>|]/g, '').trim() || '分享卡';
   canvas.toBlob(blob => {
-    if (!blob) return;
+    if (!blob) {
+      toast('分享卡没有生成。');
+      return;
+    }
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `谁是人类-${model.title || '分享卡'}.png`;
+    link.download = `谁是人类-${title}.png`;
+    document.body.appendChild(link);
     link.click();
+    link.remove();
     setTimeout(() => URL.revokeObjectURL(link.href), 1500);
+    toast('分享卡已保存。');
   }, 'image/png');
 }
 

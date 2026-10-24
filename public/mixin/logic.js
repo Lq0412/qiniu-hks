@@ -341,8 +341,8 @@ export function shareCardModel(game) {
     tagline: '一桌 AI，只有你是人',
     outcome: report.outcome ?? '',
     title: report.title ?? '',
-    humanScore: report.humanScore,
-    aiScore: report.aiScore,
+    humanScore: report.humanScore ?? game.humanScore,
+    aiScore: report.aiScore ?? game.aiScore,
     quote: quote.text,
     quoteLabel: quote.label,
     alias: report.alias ?? game.playerAlias ?? '',
@@ -358,21 +358,32 @@ export function wrapText(text, maxChars) {
   return lines;
 }
 
+const CARD_FONT = '"PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif';
+
 export function shareCardLines(model) {
-  const quoteLines = wrapText(`「${model.quote || '……'}」`, 16).slice(0, 4);
+  const wrapped = wrapText(`「${model.quote || '……'}」`, 16);
+  const quoteLines = wrapped.slice(0, 4);
+  if (wrapped.length > 4) {
+    const chars = [...quoteLines[3]];
+    chars[chars.length - 1] = '…';
+    quoteLines[3] = chars.join('');
+  }
+  const title = model.title || '';
   const lines = [
-    { text: model.work, x: 88, y: 180, color: '#f4efe4', font: '700 42px sans-serif', align: 'left' },
-    { text: model.tagline, x: 88, y: 240, color: '#9aa0b4', font: '400 28px sans-serif', align: 'left' },
-    { text: model.outcome || '', x: 88, y: 420, color: model.outcome === '潜伏成功' ? '#7dffa1' : '#ff8b7a', font: '700 36px sans-serif', align: 'left' },
-    { text: model.title || '', x: 88, y: 540, color: '#f6f1e6', font: '800 78px sans-serif', align: 'left' },
-    { text: '人味分', x: 88, y: 760, color: '#9aa0b4', font: '500 28px sans-serif', align: 'left' },
-    { text: model.humanScore == null ? '—' : String(model.humanScore), x: 88, y: 860, color: '#ffc857', font: '800 120px sans-serif', align: 'left' },
-    { text: model.quoteLabel || '金句', x: 88, y: 980, color: '#9aa0b4', font: '500 28px sans-serif', align: 'left' },
+    { role: 'kicker', text: 'MODEL GROUP · LIVE', x: 88, y: 132, color: '#ff4d6a', font: `600 22px ${CARD_FONT}`, align: 'left' },
+    { role: 'work', text: model.work, x: 88, y: 214, color: '#f4efe4', font: `700 64px ${CARD_FONT}`, align: 'left' },
+    { role: 'tagline', text: model.tagline, x: 88, y: 268, color: '#9aa0b4', font: `400 28px ${CARD_FONT}`, align: 'left' },
+    { role: 'outcome', text: model.outcome || '', x: 88, y: 400, color: model.outcome === '潜伏成功' ? '#7dffa1' : '#ff8b7a', font: `700 32px ${CARD_FONT}`, align: 'left' },
+    { role: 'title', text: title, x: 88, y: 520, color: '#f6f1e6', font: `800 84px ${CARD_FONT}`, align: 'left' },
+    { role: 'scoreLabel', text: '人味分', x: 88, y: 680, color: '#9aa0b4', font: `500 26px ${CARD_FONT}`, align: 'left' },
+    { role: 'score', text: model.humanScore == null ? '—' : String(model.humanScore), x: 88, y: 830, color: '#ffc857', font: `800 150px ${CARD_FONT}`, align: 'left' },
+    { role: 'ai', text: model.aiScore == null ? '' : `AI 味 ${model.aiScore}`, x: 992, y: 800, color: '#9aa0b4', font: `500 28px ${CARD_FONT}`, align: 'right' },
+    { role: 'quoteLabel', text: model.quoteLabel || '金句', x: 108, y: 1048, color: '#6e675c', font: `500 24px ${CARD_FONT}`, align: 'left' },
   ];
   quoteLines.forEach((text, index) => {
-    lines.push({ text, x: 88, y: 1060 + index * 64, color: '#f4efe4', font: '600 42px sans-serif', align: 'left' });
+    lines.push({ role: 'quote', text, x: 108, y: 1124 + index * 62, color: '#16140f', font: `600 40px ${CARD_FONT}`, align: 'left' });
   });
-  lines.push({ text: `${model.alias} · ${model.scene}`, x: 88, y: 1360, color: '#9aa0b4', font: '400 28px sans-serif', align: 'left' });
+  lines.push({ role: 'footer', text: [model.alias, model.scene].filter(Boolean).join(' · '), x: 88, y: 1384, color: '#9aa0b4', font: `400 26px ${CARD_FONT}`, align: 'left' });
   return lines;
 }
 
@@ -380,16 +391,33 @@ export function paintShareCard(ctx, model) {
   const width = 1080;
   const height = 1440;
   const lines = shareCardLines(model);
-  ctx.fillStyle = '#0c0e14';
+  if (ctx.canvas) {
+    ctx.canvas.width = width;
+    ctx.canvas.height = height;
+  }
+  ctx.fillStyle = '#07080d';
   ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = '#1a1020';
+  ctx.fillRect(0, 0, width, 300);
   ctx.fillStyle = '#ff4d6a';
-  ctx.fillRect(0, 0, 18, height);
-  ctx.fillStyle = '#f6f1e6';
-  ctx.fillRect(88, 280, 180, 8);
+  ctx.fillRect(0, 0, 16, height);
+  ctx.fillStyle = '#ffc857';
+  ctx.fillRect(88, 300, 168, 8);
+  const plate = lines.filter(line => line.role === 'quoteLabel' || line.role === 'quote');
+  if (plate.length) {
+    const top = Math.min(...plate.map(line => line.y)) - 52;
+    const bottom = Math.max(...plate.map(line => line.y)) + 44;
+    ctx.fillStyle = '#f6f1e6';
+    ctx.fillRect(64, top, 952, Math.min(bottom, 1348) - top);
+    const footer = lines.find(line => line.role === 'footer');
+    if (footer) footer.y = Math.min(1388, Math.max(footer.y, bottom + 64));
+  }
   for (const line of lines) {
+    if (!line.text) continue;
     ctx.fillStyle = line.color;
     ctx.font = line.font;
     ctx.textAlign = line.align;
+    ctx.textBaseline = 'alphabetic';
     ctx.fillText(line.text, line.x, line.y);
   }
   return { width, height, lines };

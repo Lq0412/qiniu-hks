@@ -180,18 +180,26 @@ test('pure helpers follow the public table and hide secrets before the reveal', 
   assert.equal(model.humanScore, 6);
   assert.equal(model.quote, '我昨天加班');
   assert.equal(caughtQuote(revealed.report).label, '被抓住的那句');
+  assert.equal(shareCardModel({ phase: 'vote', report: revealed.report }), null);
   const lines = shareCardLines(model);
   const painted = lines.map(line => line.text).join('\n');
   assert.match(painted, /谁是人类/);
   assert.match(painted, /碳基泄漏/);
   assert.match(painted, /6/);
   assert.match(painted, /我昨天加班/);
+  assert.match(painted, /AI 味 40/);
   assert.equal(painted.includes('扫码'), false);
+  assert.equal(painted.includes('二维码'), false);
+  const long = shareCardLines({ ...model, quote: '加班'.repeat(40) });
+  const longQuote = long.filter(line => line.role === 'quote').map(line => line.text);
+  assert.equal(longQuote.length, 4);
+  assert.equal(longQuote[3].endsWith('…'), true);
   const ops = [];
   const ctx = {
     fillStyle: '',
     font: '',
     textAlign: '',
+    textBaseline: '',
     fillRect() { ops.push('fillRect'); },
     fillText(text) { ops.push(text); },
     drawImage() { ops.push('drawImage'); },
@@ -202,6 +210,8 @@ test('pure helpers follow the public table and hide secrets before the reveal', 
   assert.equal(ops.includes('drawImage'), false);
   assert.equal(ops.includes('谁是人类'), true);
   assert.equal(ops.includes('碳基泄漏'), true);
+  assert.equal(ops.includes('扫码'), false);
+  assert.equal(lines.some(line => line.x < 0 || line.x > 1080 || line.y < 0 || line.y > 1440), false);
 });
 
 test('audio stubs stay empty and do not ask for a microphone', async () => {
