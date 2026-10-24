@@ -10,14 +10,15 @@
 | `humanity.mjs` | 确定性人味分、难度票型、`judgeOutcome`。同样的输入得到同样的票。匹配前先做转写归一化。 |
 | `mixin-roles.mjs` | 虚构角色、关系梗、代号池、发牌。每个角色有 `voice`（描述和 `rate`），`voiceId` 来自音色表。 |
 | `mixin-bank.mjs` | 三个场景、18 张话题卡、指控提示。卡上的回复不超过 40 字。 |
-| `mixin-prompts.mjs` | `agentPrompt`（占位符是 `{{counter_brief}}`，与控制台提示一致）、开场白、`renderBrief`、舞台指令。纯函数，不假设平台怎么投递。 |
+| `mixin-prompts.mjs` | `agentPrompt`（占位符是 `{{counter_brief}}`，与控制台提示一致）、开场白、64 条预合成清单、`renderBrief`、舞台指令。纯函数，不假设平台怎么投递。 |
 | `mixin-voice.mjs` | 座位发言接口，以及按角色 id 索引的音色表。默认 8 秒超时，超时、抛错或空字符串都改用 `fallbackText`。 |
 | `mixin-endings.mjs` | 揭晓口播。按胜负从定稿模板抽一条，填人味分、投票者和玩家原话。不调用模型。 |
 | `mixin-session.mjs` | 文字会话。`playScript` / `runUntilResult` 跑完整局。`restart` 只在结局阶段重开。 |
 | `mixin-http.mjs` | `/api/mixin`。和旧的 `/api/game`、`/voice` 分开，cookie 用 `mixin`。 |
-| `mixin-live.mjs` | 语音会话。有凭据时 `/api/mixin` 走这里，否则仍是文字会话。 |
-| `mixin-lane.mjs` | 一台设备一条连接。启动时后台预合成，对局打断后复用同一条连接。 |
+| `mixin-live.mjs` | 语音会话。下一句后台预取，出题两段预合成拼接。有凭据时 `/api/mixin` 走这里，否则仍是文字会话。 |
+| `mixin-lane.mjs` | 一台设备一条连接。启动时增量预合成，对局打断后复用同一条连接，结局释放后续跑。 |
 | `public/mixin/` | 对局页面。原生 HTML/CSS/JS，不构建。`audio.js` 播放同源 WAV，揭晓短音在浏览器里合成。 |
+| `scripts/presynth.mjs` | 按 id、文本、音色及文件存在性跳过已有音频，每句保存清单，打断后保留成果。 |
 | `scripts/sim-mixin.mjs` | `npm run sim`。打印阶段、票型和结局字段。不连接灵矽。 |
 | `scripts/play-voice.mjs` | `npm run play:voice`。没有凭据就退回文字局。 |
 
@@ -137,13 +138,21 @@ HTTP 建局只接受 `demo`、`difficulty`、`seed`、`sceneId`、`cardIds`、`r
 - 经 detect 注入的文字会以语音识别结果回来，必须滤掉。脚本句落地用 `cue.line`，不用模型改写后的字。
 - 打断发送 `{ type: 'abort', reason: 'wake_word_detected' }`。打断后的那一步不交出可播放的音频。
 - AI 回合开始的 p90 大约 1.85 秒。前端用「思考」音效和字幕盖住。每局开始先走一个热身回合，热身失败不挡住开局。
-- 群主音色的首音要 3.0–3.5 秒。第一次 `npm run play:voice` 会在后台预合成群主的固定台词，大约 90 秒，不挡住开局。文件写到 `public/mixin/audio/`，已在 `.gitignore` 里，不要提交。文件还没好，或这一句不在清单里，群主就走实时合成。
+- 群主音色的首音要 3.0–3.5 秒。第一次 `npm run play:voice` 会在后台增量预合成群主台词，不挡住开局。扩充后的全量耗时需真机验收，不能再用旧清单约 90 秒估计。文件写到 `public/mixin/audio/`，已在 `.gitignore` 里，不要提交。文件还没好，或这一句不在清单里，群主就走实时合成。
 - 灵矽服务端有 TTS 缓存：同一句话用同一音色，第二次合成的音频与第一次完全一致。预合成文件是本机退路，不依赖这次缓存还在。
 - 音色 ID 写在 `mixin-voice.mjs`，按角色 id 索引，全部是字符串（纯数字 ID 不能转成数字）。群主·零号用典型播音女 `4bdb867c07d54e119950b5bda44673a7`，一局里固定不换。柯老师用温暖治愈女 `8fca6d5172fc4c309c2d16352ca8a9b3`，备选积极知性女 `b30165086267413f96643a803aed599f`。阿斯哥用沉稳质感男 `2e7965636b0d4472ae51e75f419dff41`。深思哥用深夜播客 `b38d4a6eb8f64c209fa6febfd7f91663`，没有备选。包包用调皮公主 `1965294143278125057`，备选活泼女孩 2.0 `2077603629237219330`。小四用稚气呆板女 `91ccc0758b22473693dfa86c8e7e3fa3`。备选只记在表里，失败时不自动换。
 - 对局里的音色覆盖用环境变量 `MIXIN_VOICE_IDS`。格式是 `角色id=音色id`，多项用英文逗号分隔，例如 `claudia=8fca6d5172fc4c309c2d16352ca8a9b3,baobao=1965294143278125057`。等号两侧可以有空格。值按字符串读取。缺等号或空 id 的项忽略，没写到的角色继续用表里的默认 id。
 - 语音探针用另一个变量 `LINX_VOICE_IDS`。那是按位置排列的音色 id，英文逗号分隔，顺序见探针脚本。探针不会读 `MIXIN_VOICE_IDS`，对局也不会读 `LINX_VOICE_IDS`。
 
-揭晓顺序固定：浏览器先合成约 0.36 秒短音，再播群主的「投票结束，揭晓时间。」（有预合成文件就用文件，否则实时），最后实时念结局口播。短音不写进这段 WAV，避免响两次。
+取消与排空：每轮 detect 分配递增序号，取消时立即结束调用者的等待，并把该轮放入排空状态。音频、字幕和 stop 在排空期间不交给下一轮；收到旧轮 stop，或等到 `settleMs`（默认 400ms）才发送排队的 detect。同一连接上的 detect 串行，重复取消不会让等待中的旧请求迟发。排空窗口之后才到的迟到帧仍可能混入，协议没有可用于逐帧归属的轮次字段。
+
+下一句预取：`step()` 的 `finish()` 调用 `fulfillCue()` 后，`shiftCue()` 已把下一句的 situation 和 instruction 定稿（answer 的 spoken 也已更新；当前提示词未嵌入 spoken）。只要还有 cue 且未到 result，就立即后台调用 `speakCue()`，按 cueId 保存 promise。预取不落地局面，下一次 step 复用结果，仍用该次 step 的 now 落地。cueId 不匹配、tick 跳过、interrupt、restart 或 result 都作废预取；未完成时调用 `cancelTurn()` 让出连接，interrupt 原有 `abort()` 保留。失败被捕获，超时、无音频只留字幕，断线沿用原来的重连重试。预取只掩盖播放上一句的时间，首句和玩家发言后的第一句仍需等待。没有做流式回包。
+
+预合成清单保持原 11 条最前，再加入 3 个场景 × 4 个玩家代号的 12 条开场白、18 张题卡 × 第 1/2 题的 36 条出题段，以及 5 个 AI 名字的「请{name}先来。」段，共 64 条（其中默认开场白文本重复，id 各自稳定）。host_card 优先命中整句，否则两段都命中同一群主音色时拼接 PCM，中间加 150ms 静音；缺任意一段或原句被 90 字截断时走实时合成。增量预合成仅跳过 manifest 中 id、文本、音色相同且文件存在的条目，每完成一句就保存包含旧条目的清单，打断或后续失败不会丢掉已经保存的成果。
+
+对局到 result 时先作废并取消预取，再 `lane.releaseGame()`；通道回到 idle 后自动续跑增量预合成。下一局可再次打断续跑，仍用同一条连接。result 不再发起对局 detect，后台预合成可以继续 detect。结局后的 restart 在下一次 start 重新取得通道。当前中途不能 restart；HTTP TTL 删除会话和新建另一局尚无语音所有权交接或显式弃局释放，旧局可能继续占用或争用连接，需要后续补会话生命周期管理。
+
+揭晓顺序固定：浏览器先合成约 0.36 秒短音，再播群主的「投票结束，揭晓时间。」（有预合成文件就用文件，否则实时），最后实时念结局口播。短音不写进这段 WAV，避免响两次。过渡段用 `timeoutMs`，结局段独立用 `revealTimeoutMs`（默认等于 `timeoutMs`），两段各自启动计时；过渡超时仍尝试结局，结局失败仍保留过渡音频。
 
 指控、念票和群主固定台词都由服务端先套成「【台词】」再送 detect，引用用服务端原文。
 
@@ -219,7 +228,7 @@ export LINX_API_KEY='<API key>'
 npm run play:voice
 ```
 
-需要 Node.js 24、上面的设备 JSON（也可以是文件路径，或仓库根目录已被忽略的 `.linx-device.json`）、`LINX_API_KEY`，以及浏览器允许播放声音。麦克风权限按浏览器提示准备；这一局不上传「按住说话」的录音，玩家在输入框打字并点确认。第一次启动会在后台自动预合成，大约 90 秒。打开命令打印的地址，默认是 http://127.0.0.1:4173/mixin 。`PORT` 改端口。也可以同时设置 `LINX_WS_URL`、`LINX_WS_TOKEN`、`LINX_DEVICE_ID`、`LINX_CLIENT_ID` 跳过 OTA。没有凭据时同一条命令退回文字局，不连接灵矽。
+需要 Node.js 24、上面的设备 JSON（也可以是文件路径，或仓库根目录已被忽略的 `.linx-device.json`）、`LINX_API_KEY`，以及浏览器允许播放声音。麦克风权限按浏览器提示准备；这一局不上传「按住说话」的录音，玩家在输入框打字并点确认。第一次启动会在后台增量预合成，已有条目会跳过，全量耗时需真机验收。打开命令打印的地址，默认是 http://127.0.0.1:4173/mixin 。`PORT` 改端口。也可以同时设置 `LINX_WS_URL`、`LINX_WS_TOKEN`、`LINX_DEVICE_ID`、`LINX_CLIENT_ID` 跳过 OTA。没有凭据时同一条命令退回文字局，不连接灵矽。
 
 ## 分工
 
