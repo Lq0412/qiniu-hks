@@ -353,25 +353,3 @@ legend { font-size: 12px; letter-spacing: 0.18em; color: var(--muted); margin-bo
 .votes .seat-vote { min-height: 64px; border-radius: 14px; border: 2px solid var(--gold); background: rgba(255,200,87,.1); font-size: 20px; font-weight: 700; }
 .vote-confirm { margin: 4px 0; color: var(--gold); font-size: 20px; font-weight: 700; }
 @media (max-width: 980px) { .votes { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; } .votes .seat-vote { min-height: 48px; font-size: 16px; } }
-
-/* 本轮记录与大字幕并列，共用中间的可用空间。 */
-.lower { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-content: stretch; overflow: hidden; gap: 28px; padding: 12px 0; }
-.history { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--line); border-radius: 18px; background: rgba(255,255,255,.025); overflow: hidden; }
-.history h2 { margin: 0; padding: 14px 18px; font-size: 15px; border-bottom: 1px solid var(--line); }
-.history h2 small { margin-left: 12px; font-size: 12px; font-weight: 400; color: var(--muted); }
-.history ol { overflow-y: auto; min-height: 0; margin: 0; padding: 16px 18px; list-style: none; overscroll-behavior: contain; }
-.history li { display: flex; gap: 12px; margin-bottom: 18px; }
-.history li:last-child { margin-bottom: 0; }
-.avatar { flex: 0 0 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 12px; color: var(--gold); font-size: 12px; background: #1a1922; }
-.history li div { min-width: 0; }
-.history strong { font-size: 13px; color: var(--gold); }
-.history p { margin: 6px 0 0; line-height: 1.65; font-size: 16px; overflow-wrap: anywhere; }
-.caption { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; justify-content: center; gap: 14px; }
-@media (max-width: 980px) {
-  .lower { grid-template-columns: 1fr; grid-template-rows: minmax(60px, 1fr) auto; gap: 8px; padding: 4px 0; }
-  .history h2 { padding: 7px 10px; font-size: 12px; }
-  .history ol { padding: 8px 10px; }
-  .history p { font-size: 13px; }
-  .history li { margin-bottom: 10px; gap: 8px; }
-  .caption { max-height: 16vh; gap: 4px; }
-}
