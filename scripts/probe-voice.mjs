@@ -112,6 +112,7 @@ export function openLinxProbeSession({
     let settled = false;
     let ready = false;
     let sessionId = null;
+    let handshakeTimedOut = false;
     let socket;
     const listeners = new Set();
     const fail = error => {
@@ -147,6 +148,7 @@ export function openLinxProbeSession({
       },
     };
     const timer = setTimeout(() => {
+      handshakeTimedOut = true;
       try { socket?.close(); } catch { /* ignore */ }
       fail(new Error('灵矽握手超时'));
     }, timeoutMs);
@@ -210,7 +212,7 @@ export function openLinxProbeSession({
     });
     socket.on?.('close', () => {
       session.closed = true;
-      if (!ready) fail(new Error('灵矽连接已关闭'));
+      if (!ready) fail(new Error(handshakeTimedOut ? '灵矽握手超时' : '灵矽连接已关闭'));
       else emit({ type: 'close' });
     });
   });

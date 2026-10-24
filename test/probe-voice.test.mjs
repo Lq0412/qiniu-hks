@@ -245,7 +245,8 @@ test('turn, interrupt, role and ASR judgments ignore out-of-window events', () =
   assert.equal(judgeOpeningEcho({ openingText: OPENING_TEXT, sttTexts: [`前面${OPENING_TEXT}`] }).echoed, true);
   assert.equal(judgeOpeningEcho({ openingText: OPENING_TEXT, sttTexts: ['用户在说话'] }).echoed, false);
   assert.equal(describeAsrShape('明天三点见。').numberStyle, 'chinese');
-  assert.equal(describeAsrShape('明天3点见。').numberStyle, 'mixed');
+  assert.equal(describeAsrShape('明天3点见。').numberStyle, 'arabic');
+  assert.equal(describeAsrShape('三点，共3人').numberStyle, 'mixed');
   assert.equal(describeAsrShape('hello').hasPunctuation, false);
   assert.equal(describeAsrShape('3点').numberStyle, 'arabic');
   const pcm = wavWithPcm(Buffer.alloc(640, 1));
@@ -487,7 +488,7 @@ test('credentials come from env or device file and results omit them', async () 
     const code = await main(['--out', out, '--samples', '1', '--interrupt-samples', '1', '--timing-samples', '1', '--hold-ms', '0', '--voices', VOICES.join(',')], {
       log: line => output.push(line), error: line => output.push(line),
     }, {
-      env: { LINX_API_KEY: 'probe-api-key' }, tailMs: 0, sleep: async () => {},
+      env: { LINX_API_KEY: 'probe-api-key' }, now: harness.now, tailMs: 0, sleep: async () => {},
       loadProbeCredentials: async () => {
         loadedByMain = true;
         return { config: { deviceId: '02:10:20:30:40:50', clientId: 'client-secret-id', apiKey: 'probe-api-key', voiceIds: VOICES }, credentials: { url: 'ws://xrobo-io.qiniuapi.com/v1/ws/', token: 'probe-secret-token' }, source: 'env', otaMs: null };

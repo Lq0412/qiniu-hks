@@ -115,12 +115,14 @@ export function redactSecrets(value, extra = []) {
     if (item == null || typeof item !== 'object') return item;
     if (seen.has(item)) return null;
     seen.add(item);
-    if (Array.isArray(item)) return item.map(entry => walk(entry, seen));
-    const out = {};
-    for (const [key, entry] of Object.entries(item)) {
-      out[key] = SECRET_KEYS.has(key.toLowerCase()) ? '[redacted]' : walk(entry, seen);
-    }
-    return out;
+    try {
+      if (Array.isArray(item)) return item.map(entry => walk(entry, seen));
+      const out = {};
+      for (const [key, entry] of Object.entries(item)) {
+        out[key] = SECRET_KEYS.has(key.toLowerCase()) ? '[redacted]' : walk(entry, seen);
+      }
+      return out;
+    } finally { seen.delete(item); }
   };
   return walk(value, new WeakSet());
 }
