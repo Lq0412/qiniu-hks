@@ -69,14 +69,19 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
   const hostVoiceId = voiceOf(roleById('host')).voiceId;
   let now = Number.isInteger(options.now) ? options.now : 0;
   let link = null;
+  let prefetch = null;
+  let released = false;
   const clips = new Map();
 
-  async function detectRetry(request, limitMs = timeoutMs) {
-    const detect = () => withTimeout(link.detect(request), limitMs, '这一句', () => link.cancelTurn());
+  async function detectRetry(request, limitMs = timeoutMs, valid = () => true) {
+    const detect = () => {
+      if (!valid()) throw new Error('这一句已过期');
+      return withTimeout(link.detect(request), limitMs, '这一句', () => link.cancelTurn());
+    };
     try {
       return await detect();
     } catch (error) {
-      if (error?.code !== 'CLOSED' || link.reconnects >= 1) throw error;
+      if (!valid() || error?.code !== 'CLOSED' || link.reconnects >= 1) throw error;
       if (game.phase !== 'error') disconnectMixin(game, { generation: game.generation, now, reason: '连接断开' });
       try {
         await link.reconnect();
@@ -87,13 +92,13 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
     }
   }
 
-  async function speakLive({ text, voiceId, line, allowAsset, limitMs = timeoutMs }) {
+  async function speakLive({ text, voiceId, line, allowAsset, limitMs = timeoutMs, valid }) {
     if (allowAsset && audioDir) {
       const pcm = await (await loadAssets(audioDir)).find({ voiceId, text: line });
       if (pcm?.length) return { pcm, spoken: line, voiceId, via: 'presynth', aborted: false };
     }
     try {
-      const result = await detectRetry({ text, voiceId }, limitMs);
+      const result = await detectRetry({ text, voiceId }, limitMs, valid);
       const aborted = result?.aborted === true;
       const pcm = !aborted && result?.pcm?.length ? result.pcm : null;
       return {
@@ -108,7 +113,7 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
     }
   }
 
-  async function speakCue(cue) {
+  async function speakCue(cue, valid = () => true) {
     const voiceId = cue.voice?.voiceId;
     if (cue.kind === 'reveal') {
       const bridge = await speakLive({
@@ -116,8 +121,9 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
         voiceId,
         line: HOST_REVEAL_BRIDGE,
         allowAsset: true,
+        valid,
       });
-      if (game.cue?.cueId !== cue.cueId) return { aborted: true, pcm: null, text: cue.line, reveal: true };
+      if (!valid() || game.cue?.cueId !== cue.cueId) return { aborted: true, pcm: null, text: cue.line, reveal: true };
       // 两次 speakLive 各自启动计时；过渡超时后仍独立尝试结局，失败则保留过渡音频。
       const ending = await speakLive({
         text: cue.instruction,
@@ -125,10 +131,11 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
         line: cue.line,
         allowAsset: false,
         limitMs: revealTimeoutMs,
+        valid,
       });
       const parts = [bridge.pcm, ending.pcm].filter(part => part?.length);
       return {
-        aborted: game.cue?.cueId !== cue.cueId,
+        aborted: !valid() || game.cue?.cueId !== cue.cueId,
         pcm: parts.length ? Buffer.concat(parts) : null,
         text: cue.line || cue.fallbackText,
         voiceId: parts.length ? voiceId : null,
@@ -141,8 +148,9 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
       voiceId,
       line: scripted ? (cue.line || cue.fallbackText) : cue.fallbackText,
       allowAsset: scripted,
+      valid,
     });
-    if (game.cue?.cueId !== cue.cueId) return { aborted: true, pcm: null, text: cue.line || cue.fallbackText, reveal: false };
+    if (!valid() || game.cue?.cueId !== cue.cueId) return { aborted: true, pcm: null, text: cue.line || cue.fallbackText, reveal: false };
     return {
       aborted: false,
       pcm: live.pcm,
@@ -150,6 +158,34 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
       voiceId: live.voiceId,
       reveal: false,
     };
+  }
+
+  function discardPrefetch() {
+    const pending = prefetch;
+    prefetch = null;
+    if (!pending) return;
+    pending.cancelled = true;
+    if (!pending.settled) {
+      try { link?.cancelTurn(); } catch { /* 连接已关闭 */ }
+    }
+  }
+
+  function releaseIfEnded() {
+    if (game.phase !== 'result' || released) return;
+    discardPrefetch();
+    released = true;
+    lane.releaseGame();
+  }
+
+  function prefetchNext() {
+    const cue = game.cue;
+    if (game.phase === 'result' || !cue) return;
+    // fulfillCue 内的 shiftCue 已更新即兴句的 spoken 和 instruction，所有 step cue 此时均已定稿。
+    const pending = { cueId: cue.cueId, cancelled: false, settled: false };
+    prefetch = pending;
+    pending.promise = speakCue(cue, () => !pending.cancelled).catch(() => ({
+      aborted: false, pcm: null, text: cue.line || cue.fallbackText, voiceId: null, reveal: cue.kind === 'reveal',
+    })).finally(() => { pending.settled = true; });
   }
 
   function finish(cue, spoken) {
@@ -162,7 +198,8 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
       voiceUsed: spoken.voiceId,
       via: 'speech',
     });
-    if (game.phase === 'result') lane.releaseGame();
+    releaseIfEnded();
+    prefetchNext();
     const clipWav = spoken.pcm?.length ? wavFromPcm(spoken.pcm) : null;
     return { fulfilled: true, view: viewMixin(game), clipWav, reveal: spoken.reveal === true };
   }
@@ -174,7 +211,8 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
     setNow(value) { now = value; },
     view() { return viewMixin(game); },
     async start() {
-      if (!link) link = await lane.acquireForGame();
+      if (!link || released) link = await lane.acquireForGame();
+      released = false;
       try { await detectRetry({ text: warmupDetect(), voiceId: hostVoiceId }); }
       catch { /* 预热失败不挡住开局 */ }
       if (game.phase === 'error') {
@@ -184,8 +222,11 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
     },
     async step() {
       const cue = game.cue;
+      if (prefetch && prefetch.cueId !== cue?.cueId) discardPrefetch();
       if (!cue) return { fulfilled: false, view: viewMixin(game) };
-      const spoken = await speakCue(cue);
+      const pending = prefetch;
+      const spoken = await (pending ? pending.promise : speakCue(cue));
+      if (prefetch === pending) prefetch = null;
       if (spoken.aborted || game.cue?.cueId !== cue.cueId) return { fulfilled: false, view: viewMixin(game) };
       return finish(cue, spoken);
     },
@@ -204,18 +245,28 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
     },
     vote(seat) { return castVote(game, { generation: game.generation, seat, now }); },
     interrupt(text) {
+      discardPrefetch();
       try { link?.abort(); } catch { /* 这一句已经说完 */ }
       return interruptMixin(game, { generation: game.generation, text, now });
     },
     hint() { return revealHint(game, { generation: game.generation }); },
-    restart() { return restartMixin(game, { now }); },
+    restart() {
+      discardPrefetch();
+      return restartMixin(game, { now });
+    },
     tick(ms = 0) {
       now += ms;
-      return tickMixin(game, now);
+      const result = tickMixin(game, now);
+      if (prefetch && prefetch.cueId !== game.cue?.cueId) discardPrefetch();
+      releaseIfEnded();
+      return result;
     },
     tickTo(value) {
       now = value;
-      return tickMixin(game, now);
+      const result = tickMixin(game, now);
+      if (prefetch && prefetch.cueId !== game.cue?.cueId) discardPrefetch();
+      releaseIfEnded();
+      return result;
     },
   };
 }
