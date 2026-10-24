@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { defaultLineup, seatFrom } from '../mixin-roles.mjs';
 import {
   clampScore,
+  containsSwear,
   countFillers,
   findBounded,
   findQuotedSpan,
@@ -113,6 +114,9 @@ test('chinese neighbors do not turn innocent sentences into swears or identity l
   assert.equal(has(feature('他妈的，卧槽'), 'break'), true);
   assert.equal(has(feature('我妈说好烦'), 'life'), true);
   assert.equal(has(feature('我是人类'), 'break'), true);
+  assert.equal(containsSwear('其他妈妈都这么说'), false);
+  assert.equal(containsSwear('我妈的手机坏了'), false);
+  assert.equal(containsSwear('卧槽'), true);
   const laughOnly = feature('哈哈哈哈');
   assert.equal(has(laughOnly, 'laugh'), true);
   assert.equal(has(laughOnly, 'filler'), false);

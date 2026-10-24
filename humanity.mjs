@@ -35,6 +35,29 @@ const IDENTITY = [
   { phrase: '我就是人', after: '才工员家类民生道性事群口' },
 ];
 const COMPLIANCE = ['请以实际情况为准', '请以实际为准', '无法承诺', '这只是我的看法'];
+
+export const HUMAN_SPANS = [
+  ...IDENTITY.map(item => ({ phrase: item.phrase, before: item.before, after: item.after, delta: 3 })),
+  ...SWEAR.map(item => ({ phrase: item.phrase, before: item.before, after: item.after, delta: 3 })),
+  ...LIFE.map(item => ({ phrase: item.phrase, before: item.before, after: item.after, delta: 2 })),
+  ...EMOTION.map(phrase => ({ phrase, delta: 1 })),
+  { phrase: '哈哈', delta: 1 },
+  { phrase: '不行我笑了', delta: 1 },
+  ...FILLERS.map(phrase => ({ phrase, delta: 1 })),
+];
+
+export const AI_SPANS = [
+  { phrase: '作为一个', delta: -1 },
+  { phrase: '语言模型', delta: -1 },
+  { phrase: '希望对你有帮助', delta: -1 },
+  { phrase: '已为您', delta: -1 },
+  { phrase: '综上', delta: -1 },
+  { phrase: '拆成三步', delta: -1 },
+  { phrase: '分成三步', delta: -1 },
+  { phrase: '分三步', delta: -1 },
+  { phrase: '三步走', delta: -1 },
+  ...COMPLIANCE.map(phrase => ({ phrase, delta: -1 })),
+];
 const DURATION_LO = 4250;
 const DURATION_HI = 11750;
 
@@ -213,6 +236,10 @@ function hasEmotion(text) {
 
 function hasSwear(text) {
   return hasMarked(text, SWEAR);
+}
+
+export function containsSwear(text) {
+  return hasSwear(text);
 }
 
 function hasIdentity(text) {

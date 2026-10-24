@@ -12,6 +12,7 @@
 | `mixin-bank.mjs` | 三个场景、18 张话题卡、指控提示。卡上的回复不超过 40 字。 |
 | `mixin-prompts.mjs` | `agentPrompt`（占位符是 `{{counter_brief}}`，与控制台提示一致）、开场白、`renderBrief`、舞台指令。纯函数，不假设平台怎么投递。 |
 | `mixin-voice.mjs` | 座位发言接口，以及按角色 id 索引的音色表。默认 8 秒超时，超时、抛错或空字符串都改用 `fallbackText`。 |
+| `mixin-endings.mjs` | 揭晓口播。按胜负从定稿模板抽一条，填人味分、投票者和玩家原话。不调用模型。 |
 | `mixin-session.mjs` | 文字会话。`playScript` / `runUntilResult` 跑完整局。`restart` 只在结局阶段重开。 |
 | `mixin-http.mjs` | `/api/mixin`。和旧的 `/api/game`、`/voice` 分开，cookie 用 `mixin`。 |
 | `scripts/sim-mixin.mjs` | `npm run sim`。打印阶段、票型和结局字段。 |
@@ -127,7 +128,7 @@ HTTP 建局只接受 `demo`、`difficulty`、`seed`、`sceneId`、`cardIds`、`r
 - 同一台设备只保持一条 WebSocket。第二条会被断开。
 - 每个回合在 `listen.detect` 上用 `agent_params.voice` 换音色。
 - 服务端把当前局势写进每一次 detect 的文本。`custom_replace_prompt` 只在 hello 设置一次。占位符是 `{{counter_brief}}`，必须和控制台提示词一致。
-- 不依赖 MCP。控制台提示要求模型不调工具，所以结局文案由服务端生成，不走 `self.game.report`。
+- 不依赖 MCP。控制台提示要求模型不调工具。揭晓口播由 `mixin-endings.mjs` 生成，不走 `self.game.report`。
 - detect 文本的约定：必须逐字念的内容用「【台词】」包起来，包括群主的固定台词、指控里的原话、报票。只给角色和话题时，模型最多用角色口吻说两句。
 - 经 detect 注入的文字会以语音识别结果回来，必须滤掉。
 - AI 回合开始的 p90 大约 1.85 秒。前端用「思考」音效和字幕盖住。每局先走一个热身回合。
@@ -137,6 +138,16 @@ HTTP 建局只接受 `demo`、`difficulty`、`seed`、`sceneId`、`cardIds`、`r
 - 环境变量 `LINX_VOICE_IDS` 仍可覆盖。格式是 `角色id=音色id`，多项用英文逗号分隔，例如 `claudia=8fca6d5172fc4c309c2d16352ca8a9b3,baobao=1965294143278125057`。等号两侧可以有空格。值按字符串读取。缺等号或空 id 的项忽略，没写到的角色继续用表里的默认 id。
 
 当前指控仍是舞台指令要求模型引用原话，兜底台词是服务端模板，落地时记下实际说出的字，报告文案另做逐字核对。语音调度应改成服务端先套好已经包含原话的「【台词】」再送 detect，这样引用必然逐字。本步不改这条路径。
+
+## 结局口播（ADR-008）
+
+[ADR-008 #19](https://github.com/Lq0412/qiniu-hks/issues/19) 规定揭晓口播由服务端生成。`beginReveal` 调用 `mixin-endings.mjs`，把填好的文本放进揭晓 cue，舞台指令是「【台词】」加上这段口播，兜底台词也是这段口播。模型只照念。不走 LLM，也不走 MCP。
+
+- 被识破从 C1–C5 里抽 1 条。潜伏成功且五号 0 票时只从 S1、S3、S4 里抽。有票时 S1–S5 都可以。随机数可以注入。同一会话最近 3 局尽量不重复；三条候选都被用过时才允许重复。重开会带上这份记录。
+- `{玩家原话}`：被识破取最暴露人类的一句（leakQuote），潜伏成功取最像 AI 的一句（bestAiQuote）。先按人味分规则选句，再截到不超过 14 字；超长时取命中规则的那一段。模板里已经有引号。玩家原话含脏话时整句换成「（已和谐）」，词表和词边界都用 `humanity.mjs`，所以「其他妈妈」不会被误伤。全程没说话时填「……」。
+- `{人味分}` 填整数。`{投票者}`：1 人写名字，2 人用「和」连接；3–4 人时 C2 写「全桌」，C3 写「三位同事」或「四位同事」，其余条目写「全桌」。被识破时投票者一定有值。
+- 分享卡称号仍按称号池选取，和口播文本互不影响。
+- 揭晓前公开视图里没有口播。`report` 在揭晓前是 null，口播只在进入揭晓、写好 cue 之后出现。
 
 ## 玩家代号
 
@@ -169,6 +180,7 @@ npm run sim -- --difficulty hell --seed 3
 - [ADR-005 #14](https://github.com/Lq0412/qiniu-hks/issues/14)：一局一条灵矽连接，不按阶段重连、不重新 OTA。探针已测出 detect 换音色、`{{counter_brief}}` 只在 hello 注入、首音延迟和 TTS 缓存。实现留给语音调度。
 - [ADR-006 #15](https://github.com/Lq0412/qiniu-hks/issues/15)：灵矽凭据不入库、不进日志，离线测试和 CI 不依赖它们。
 - [ADR-007 #18](https://github.com/Lq0412/qiniu-hks/issues/18)：胜负和计票采用方案 A。5 号 AI 票 ≥2 且为最高（并列也算）才是被识破；简单档按人味分给 2 / 1 / 0 票，普通档 3 或 1，地狱档 4 或 0；甩锅大师只在潜伏成功且投中严格第二高。
+- [ADR-008 #19](https://github.com/Lq0412/qiniu-hks/issues/19)：揭晓口播由服务端按定稿模板生成，以「【台词】」交给群主照念。0 票只抽 S1、S3、S4。称号池和口播分开。揭晓前不把口播放进公开视图。
 
 ## 下一步
 

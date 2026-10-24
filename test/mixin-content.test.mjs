@@ -110,7 +110,7 @@ test('prompts keep the brief slot and can render every stage direction', () => {
   assert.equal(toneFor('hell'), '笃定');
   assert.equal(toneFor('missing'), '认真');
   assert.match(reportInstruction({ outcome: '潜伏成功', votes: '1/4', catcher: '包包', aiScore: 80, playerLines: ['原话'], titles: ['人形 Transformer'] }), /不得更改/);
-  for (const file of ['mixin-session.mjs', 'mixin-http.mjs', 'mixin-game.mjs', 'humanity.mjs', 'mixin-roles.mjs', 'mixin-prompts.mjs', 'mixin-voice.mjs', 'scripts/sim-mixin.mjs']) {
+  for (const file of ['mixin-session.mjs', 'mixin-http.mjs', 'mixin-game.mjs', 'humanity.mjs', 'mixin-roles.mjs', 'mixin-prompts.mjs', 'mixin-voice.mjs', 'mixin-endings.mjs', 'scripts/sim-mixin.mjs']) {
     const source = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
     assert.doesNotMatch(source, /getUserMedia|from '\.\/linx\.mjs'|new WebSocket/);
     assert.doesNotMatch(source, /阿柿|阿梨|阿枣|阿桃/);

@@ -43,7 +43,10 @@ export function stageDirection(cue) {
   if (cue.kind === 'accuse') return `${head}你是${cue.seat}号${cue.name}。你怀疑${cue.target}号「${cue.targetName}」不像AI，理由必须逐字引用他说过的这句："${cue.quote}"。用你的口头禅，一句话不超过40字，语气${cue.tone}。`;
   if (cue.kind === 'rebuttal') return `${head}你是${cue.seat}号${cue.name}。5号刚刚打断你说："${cue.interrupt}"。用一句不超过25字回怼，不提问。`;
   if (cue.kind === 'vote') return `${head}你是${cue.seat}号${cue.name}。用不超过20字宣布：我投${cue.target}号。可以带口头禅。`;
-  if (cue.kind === 'reveal') return `${head}你是群主·零号。结果：${cue.outcome}，5号得票${cue.received}/4。先用一句话宣布结果，再揭晓"5号${cue.alias}其实是人类"，最后用一句话点评，引用"${cue.quote}"。总共不超过60字。`;
+  if (cue.kind === 'reveal') {
+    if (cue.line) return `【台词】${cue.line}`;
+    return `${head}你是群主·零号。结果：${cue.outcome}，5号得票${cue.received}/4。先用一句话宣布结果，再揭晓"5号${cue.alias}其实是人类"，最后用一句话点评，引用"${cue.quote}"。总共不超过60字。`;
+  }
   throw new Error(`未知舞台指令 ${cue.kind}`);
 }
 

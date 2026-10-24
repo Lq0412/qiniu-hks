@@ -3,6 +3,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { cardById, drawCards, replyFor, sceneById, SCENES } from './mixin-bank.mjs';
+import { renderEnding } from './mixin-endings.mjs';
 import { openingLine, renderBrief, stageDirection, toneFor } from './mixin-prompts.mjs';
 import { PLAYER_ALIASES, ROLES, createRng, defaultLineup, pickAlias, pickLineup, relationshipLines, roleById, seatFrom, voiceOf } from './mixin-roles.mjs';
 import {
@@ -174,6 +175,9 @@ export function createMixinGame(options = {}) {
     hintReleased: false,
     hintTaken: false,
     debug: options.debug === true,
+    random: typeof options.random === 'function' ? options.random : Math.random,
+    recentEndingIds: Array.isArray(options.recentEndingIds) ? options.recentEndingIds.slice(-3) : [],
+    endingTemplateId: typeof options.endingTemplateId === 'string' ? options.endingTemplateId : null,
     nudged: false,
     stallMark: null,
     human: { score: 0, breakdown: [], aiScore: 100 },
@@ -364,7 +368,15 @@ export function restartMixin(game, { now = 0 } = {}) {
   const generation = game.generation + 1;
   const id = game.id;
   const hook = game.isStageEcho;
-  const next = createMixinGame({ ...game.options, seed: game.seed + 1, now, isStageEcho: hook });
+  const next = createMixinGame({
+    ...game.options,
+    seed: game.seed + 1,
+    now,
+    isStageEcho: hook,
+    random: game.random,
+    recentEndingIds: game.recentEndingIds,
+    endingTemplateId: game.endingTemplateId,
+  });
   next.id = id;
   next.generation = generation;
   for (const key of Object.keys(game)) delete game[key];
@@ -662,11 +674,27 @@ function beginVote(game, now) {
 function beginReveal(game, now) {
   ensurePlan(game);
   game.report = buildReport(game);
-  const quote = game.report.leakQuote || game.report.bestAiQuote || '没有留下原话';
+  const picked = pickQuotes(game.playerLines);
+  const useLeak = game.report.outcome === '被识破';
+  const ending = renderEnding({
+    outcome: game.report.outcome,
+    humanScore: game.human.score,
+    playerVotes: game.report.received,
+    voters: game.report.from.map(item => item.name),
+    quote: useLeak ? picked.leak : picked.best,
+    keywords: useLeak ? picked.leakKeywords : picked.bestKeywords,
+  }, {
+    random: game.random,
+    recentIds: game.recentEndingIds,
+    templateId: game.endingTemplateId,
+  });
+  game.recentEndingIds = ending.recentIds;
+  game.report.endingId = ending.id;
+  game.report.endingText = ending.text;
   arm(game, [cueFields(game, {
-    kind: 'reveal', seat: 0, roleId: 'host', timeoutMs: TIMEOUTS.reveal, maxChars: 120,
-    outcome: game.report.outcome, received: game.report.received, quote,
-    fallbackText: `${game.report.outcome}。五号得票${game.report.received}/4。五号${game.playerAlias}其实是人类。${game.report.roast}`.slice(0, 120),
+    kind: 'reveal', seat: 0, roleId: 'host', timeoutMs: TIMEOUTS.reveal, maxChars: ending.text.length,
+    line: ending.text, outcome: game.report.outcome, received: game.report.received,
+    fallbackText: ending.text,
   })], now, TIMEOUTS.reveal);
 }
 
@@ -756,6 +784,7 @@ function cueFields(game, fields) {
     outcome: fields.outcome ?? '',
     received: fields.received ?? 0,
     alias: game.playerAlias,
+    line: typeof fields.line === 'string' ? fields.line : '',
   };
   cue.instruction = stageDirection(cue);
   return cue;
@@ -1018,7 +1047,7 @@ function buildReport(game) {
 
 function pickQuotes(lines) {
   const usable = lines.filter(line => contentLength(line.text) >= 2);
-  if (!usable.length) return { best: '', leak: '' };
+  if (!usable.length) return { best: '', leak: '', bestKeywords: [], leakKeywords: [] };
   let best = usable[0];
   let leak = null;
   let bestDelta = Infinity;
@@ -1034,7 +1063,7 @@ function pickQuotes(lines) {
       leak = line;
     }
   }
-  return { best: best.text, leak: leak ? leak.text : '' };
+  return { best: best.text, leak: leak ? leak.text : '', bestKeywords: best.keywords ?? [], leakKeywords: leak?.keywords ?? [] };
 }
 
 function quoteField(value, corpus, required) {

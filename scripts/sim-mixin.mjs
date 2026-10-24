@@ -49,6 +49,8 @@ if (view.votes) {
   console.log(`计票：1号${tally[1]} 2号${tally[2]} 3号${tally[3]} 4号${tally[4]} 5号${tally[5]}`);
 }
 console.log('');
+console.log(`口播：${report.endingText ?? ''}`);
+console.log('');
 console.log('结局');
 for (const key of ['outcome', 'title', 'alias', 'scene', 'votes', 'aiScore', 'bestAiQuote', 'leakQuote', 'catcher', 'catcherLine', 'roast', 'cta', 'scapegoatMaster', 'copySource']) {
   console.log(`  ${key}: ${JSON.stringify(report[key])}`);

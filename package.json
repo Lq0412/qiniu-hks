@@ -6,7 +6,7 @@
     "start": "node server.mjs",
     "sim": "node scripts/sim-mixin.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "node --check server.mjs && node --check linx.mjs && node --check benchmark.mjs && node --check game.mjs && node --check humanity.mjs && node --check mixin-roles.mjs && node --check mixin-bank.mjs && node --check mixin-prompts.mjs && node --check mixin-voice.mjs && node --check mixin-game.mjs && node --check mixin-session.mjs && node --check mixin-http.mjs && node --check scripts/sim-mixin.mjs && node --check public/app.js && node --check public/audio.js && node --check public/recorder.js",
+    "check": "node --check server.mjs && node --check linx.mjs && node --check benchmark.mjs && node --check game.mjs && node --check humanity.mjs && node --check mixin-roles.mjs && node --check mixin-bank.mjs && node --check mixin-prompts.mjs && node --check mixin-voice.mjs && node --check mixin-endings.mjs && node --check mixin-game.mjs && node --check mixin-session.mjs && node --check mixin-http.mjs && node --check scripts/sim-mixin.mjs && node --check public/app.js && node --check public/audio.js && node --check public/recorder.js",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=*.mjs --test-coverage-lines=80 test/*.test.mjs",
     "test:rules": "node --test --experimental-test-coverage --test-coverage-include=game.mjs --test-coverage-branches=90 test/game.test.mjs && node --test --experimental-test-coverage --test-coverage-include=mixin-game.mjs --test-coverage-branches=90 test/mixin-game.test.mjs && node --test --experimental-test-coverage --test-coverage-include=humanity.mjs --test-coverage-branches=90 test/humanity.test.mjs",
     "smoke:linx": "node scripts/smoke-linx.mjs"
