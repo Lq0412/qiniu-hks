@@ -383,7 +383,7 @@ async function liveFixture(onDetect, extra = {}) {
     config: { deviceId: 'fake-device', clientId: 'fake-client' },
     credentials: { url: 'wss://xrobo-io.qiniuapi.com/v1/ws/', token: 'fake-token' },
     createSocket: fake.createSocket,
-    settleMs: 50,
+    settleMs: extra.settleMs ?? 50,
   });
   await link.connect();
   const session = createVoiceSession({
@@ -596,3 +596,131 @@ for (const missing of [false, true]) {
     } finally { f.session.tick(1_000_000); f.link.close(); await rm(dir, { recursive: true, force: true }); }
   });
 }
+
+test('排队超过句子时限仍从发送计时，连续句只有超长句无声', async () => {
+  let oldStopped = false;
+  const f = await liveFixture(request => {
+    if (request.index === 2) {
+      setTimeout(() => { oldStopped = true; replyAudio(request, 9); }, 180);
+      return true;
+    }
+    if (request.index >= 3) {
+      assert.equal(oldStopped, true);
+      setTimeout(() => replyAudio(request, 3), 10);
+      return true;
+    }
+  }, { timeoutMs: 40, settleMs: 300 });
+  try {
+    // 排空上限长于迟到 stop；排队的 140ms 不占下一句的 40ms。
+    assert.equal((await f.session.step()).clipWav, null);
+    for (let i = 0; i < 3; i += 1) {
+      const result = await f.session.step();
+      assert.deepEqual(result.clipWav.subarray(44), Buffer.alloc(640, 3));
+    }
+    f.session.tick(1_000_000);
+  } finally { f.link.close(); }
+});
+
+test('预取 CLOSED 不改变 phase 不重连，下一 step 才重连', async () => {
+  const f = await liveFixture(request => {
+    if (request.index === 3) { setImmediate(() => request.socket.close()); return true; }
+  });
+  try {
+    await f.session.step();
+    const phase = f.session.game.phase;
+    await waitFor(() => f.fake.sockets[0].readyState === 3);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(f.session.game.phase, phase);
+    assert.equal(f.link.reconnects, 0);
+    assert.equal(f.fake.sockets.length, 1);
+    const next = await f.session.step();
+    assert.equal(f.link.reconnects, 1);
+    assert.ok(next.clipWav?.length > 44);
+  } finally { f.link.close(); }
+});
+
+test('预合成迟到 stop 时开局有界，立即续跑不交错清单且只用一条连接', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'lane-late-stop-'));
+  let stopped = false;
+  const fake = installFake({ onDetect(request) {
+    if (request.index === 1) {
+      setTimeout(() => { stopped = true; replyAudio(request, 9); }, 250);
+      return true;
+    }
+    assert.equal(stopped, true);
+  } });
+  const link = createMixinLink({
+    config: { deviceId: 'fake-device', clientId: 'fake-client' },
+    credentials: { url: 'wss://xrobo-io.qiniuapi.com/v1/ws/', token: 'fake-token' },
+    createSocket: fake.createSocket, settleMs: 500,
+  });
+  const catalog = [
+    { id: 'a', roleId: 'host', text: '第一句' },
+    { id: 'b', roleId: 'host', text: '第二句' },
+  ];
+  const lane = createAudioLane({ dir, catalog, openLink: () => link });
+  try {
+    const old = lane.warmupBackground();
+    await waitFor(() => fake.detects.length === 1);
+    // 同一调用栈立即释放：旧循环尚未处理 abort 的完成结果。
+    const acquired = lane.acquireForGame();
+    lane.releaseGame();
+    await acquired;
+    const session = createVoiceSession({ lane, timeoutMs: 1000 });
+    const began = performance.now();
+    await session.start();
+    assert.ok(performance.now() - began < 200);
+    assert.equal(stopped, false);
+    lane.releaseGame();
+    await old;
+    await waitFor(() => lane.mode === 'idle');
+    const { readFile } = await import('node:fs/promises');
+    const manifest = JSON.parse(await readFile(path.join(dir, 'manifest.json'), 'utf8'));
+    assert.deepEqual(manifest.lines.filter(line => line.kind === 'tts').map(line => line.id), ['a', 'b']);
+    assert.equal(fake.detects.length, 3);
+    assert.equal(fake.sockets.length, 1);
+  } finally { lane.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test('揭晓过渡超时且 stop 迟到，结局排队后仍收完整音频', async () => {
+  const f = await liveFixture(request => {
+    if (request.index === 2) {
+      setTimeout(() => replyAudio(request, 9), 160);
+      return true;
+    }
+    if (request.index === 3) {
+      setTimeout(() => replyAudio(request, 3), 10);
+      return true;
+    }
+  }, { timeoutMs: 40, settleMs: 300 });
+  try {
+    f.session.game.cue.kind = 'reveal';
+    f.session.game.cue.line = '测试结局';
+    const result = await f.session.step();
+    assert.equal(result.reveal, true);
+    assert.deepEqual(result.clipWav.subarray(44), Buffer.alloc(640, 3));
+  } finally { f.link.close(); }
+});
+
+test('玩家确认发言和投票后首句在 step 前预取', async () => {
+  const f = await liveFixture();
+  try {
+    for (let i = 0; i < 100 && f.session.game.phase !== 'result'; i += 1) {
+      const game = f.session.game;
+      if (game.phase === 'round_player' || game.phase === 'defense') {
+        f.session.say('我昨天加班到十点，今天只想早点回家。');
+        if (game.phase === 'defense') f.session.vote(4);
+        const count = f.fake.detects.length;
+        f.session.confirm();
+        if (game.cue) {
+          await waitFor(() => f.fake.detects.length > count);
+          const before = f.fake.detects.length;
+          await f.session.step();
+          assert.ok(f.fake.detects.length >= before);
+        }
+      } else if (game.cue) await f.session.step();
+      else f.session.tick(1000);
+    }
+    assert.equal(f.session.game.phase, 'result');
+  } finally { f.link.close(); }
+});
