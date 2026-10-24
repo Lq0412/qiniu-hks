@@ -151,6 +151,7 @@ export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice =
   });
   const wss = new WebSocketServer({ noServer: true, maxPayload: 16384 });
   server.on('upgrade', (req, socket, head) => {
+    if (audioLane) { socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return; }
     const url = new URL(req.url, 'http://localhost');
     const session = sessions.get(sidOf(req));
     const ticket = session?.ticket;

@@ -58,7 +58,13 @@ export function createAudioLane({ openLink, dir, log = () => {}, timeoutMs = 100
       if (mode === 'presynth') {
         cancel = true;
         try { link?.abort(); } catch { /* 还没连上 */ }
-        await finished;
+        let timer;
+        const limit = new Promise(resolve => { timer = setTimeout(resolve, 3000); });
+        await Promise.race([finished, limit]);
+        clearTimeout(timer);
+        if (mode === 'presynth') {
+          try { link?.cancelTurn(); } catch { /* 还没连上，或这一句已经结束 */ }
+        }
       }
       mode = 'game';
       return ensure();

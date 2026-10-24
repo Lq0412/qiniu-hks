@@ -25,10 +25,21 @@ function ranAsScript() {
   catch { return false; }
 }
 
-function withTimeout(promise, ms, label) {
+function withTimeout(promise, ms, label, onTimeout) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label}超时（${ms}ms）`)), ms);
-    promise.then(value => { clearTimeout(timer); resolve(value); }, error => { clearTimeout(timer); reject(error); });
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn(value);
+    };
+    const timer = setTimeout(() => {
+      try { onTimeout?.(); }
+      catch { /* 取消失败也要结束等待 */ }
+      finish(reject, new Error(`${label}超时（${ms}ms）`));
+    }, ms);
+    promise.then(value => finish(resolve, value), error => finish(reject, error));
   });
 }
 
@@ -68,6 +79,7 @@ export async function runPresynth({
         link.detect({ text: scriptedDetect('群主·零号', item.text, '预合成。'), voiceId }),
         timeoutMs,
         `${item.id}这一句`,
+        () => link.cancelTurn(),
       );
       if (shouldStop()) { stopped = true; break; }
       if (!result.pcm?.length) throw new Error(`这一句没有收到音频：${item.id}`);

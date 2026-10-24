@@ -4,7 +4,10 @@ import { EventEmitter } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import WebSocket from 'ws';
+import { createAudioLane } from '../mixin-lane.mjs';
 import { createMixinLink } from '../mixin-link.mjs';
+import { createVoiceSession } from '../mixin-live.mjs';
 import { HOST_REVEAL_BRIDGE, HOST_RULES, openingLine } from '../mixin-prompts.mjs';
 import { createApp } from '../server.mjs';
 import { startVoiceServer } from '../scripts/play-voice.mjs';
@@ -20,13 +23,14 @@ function missingFile() {
   throw error;
 }
 
-function installFake({ hangAccuse = false } = {}) {
+function installFake({ hangAccuse = false, failReconnect = false, stallDetects = 0 } = {}) {
   const sockets = [];
   const detects = [];
-  const fake = { sockets, detects, aborts: 0, hanging: false, armed: false };
+  const fake = { sockets, detects, aborts: 0, hanging: false, armed: false, stallLeft: stallDetects };
   fake.createSocket = () => {
     const socket = new EventEmitter();
     sockets.push(socket);
+    const failHandshake = failReconnect && sockets.length > 1;
     socket.readyState = 0;
     socket.sent = [];
     const send = obj => socket.emit('message', Buffer.from(JSON.stringify(obj)));
@@ -48,6 +52,14 @@ function installFake({ hangAccuse = false } = {}) {
       }
       if (message.type === 'listen' && message.state === 'detect') {
         detects.push(message);
+        if (fake.stallLeft > 0) {
+          fake.stallLeft -= 1;
+          return;
+        }
+        if (failReconnect) {
+          socket.close();
+          return;
+        }
         const accuse = hangAccuse && !fake.armed && message.text.includes('【台词】') && message.text.includes('「');
         if (accuse) {
           fake.armed = true;
@@ -71,6 +83,10 @@ function installFake({ hangAccuse = false } = {}) {
     };
     queueMicrotask(() => {
       if (socket.readyState === 3) return;
+      if (failHandshake) {
+        socket.emit('error', new Error('重连失败'));
+        return;
+      }
       socket.readyState = 1;
       socket.emit('open');
     });
@@ -205,6 +221,132 @@ test('one socket plays a demo, reuses presynth, and the page can fetch each wav'
     assert.ok(voices.size >= 2);
     assert.ok(fake.detects.every(item => item.agent_params.custom_replace_prompt == null));
     assert.equal(fake.detects.every(item => typeof item.agent_params.voice.id === 'string'), true);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a failed reconnect still lets the demo reach the reveal', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'live-reconnect-'));
+  const fake = installFake({ failReconnect: true });
+  const { server, opened } = voiceApp(dir, fake, { presynthCatalog: [] });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await waitFor(() => server.audioLane.mode === 'idle');
+    const post = (url, body, cookie = '') => fetch(`${base}${url}`, {
+      method: 'POST',
+      headers: { origin: base, 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
+      body: JSON.stringify(body ?? {}),
+    });
+    const created = await post('/api/mixin', { demo: true, seed: 1 });
+    const cookie = created.headers.get('set-cookie').split(';')[0];
+    const { id } = await created.json();
+    const act = async (action, body) => {
+      const response = await post(`/api/mixin/${id}/${action}`, body, cookie);
+      const data = await response.json();
+      assert.equal(response.status, 200, JSON.stringify({ error: data.error, phase: data.game?.phase }));
+      return data;
+    };
+    let state = (await act('start')).game;
+    for (let steps = 0; steps < 120 && state.phase !== 'result'; steps += 1) {
+      if (state.phase === 'round_player') {
+        state = (await act('text', { text: ROUNDS[state.round - 1], typed: true })).game;
+        state = (await act('confirm', { revision: state.pending.revision })).game;
+        continue;
+      }
+      if (state.phase === 'defense') {
+        state = (await act('text', { text: DEFENSE })).game;
+        state = (await act('vote', { seat: 4 })).game;
+        state = (await act('confirm', { revision: state.pending.revision })).game;
+        continue;
+      }
+      if (state.cue) {
+        state = (await act('step')).game;
+        continue;
+      }
+      state = (await act('tick', { ms: 1000 })).game;
+    }
+    assert.equal(state.phase, 'result');
+    assert.equal(state.generation, 1);
+    assert.equal(typeof state.report.quote, 'string');
+    assert.equal(opened(), 1);
+    assert.equal(fake.sockets.length, 2);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a detect that never stops still lets the next line speak', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'live-stall-'));
+  const fake = installFake({ stallDetects: 1 });
+  let opened = 0;
+  const lane = createAudioLane({
+    dir,
+    catalog: [],
+    log() {},
+    openLink() {
+      opened += 1;
+      return createMixinLink({
+        config: { deviceId: '02:10:20:30:40:50', clientId: 'client-test' },
+        credentials: { url: 'wss://xrobo-io.qiniuapi.com/v1/ws/', token: TOKEN },
+        createSocket: fake.createSocket,
+        handshakeMs: 1000,
+      });
+    },
+  });
+  lane.warmupBackground();
+  try {
+    await waitFor(() => lane.mode === 'idle');
+    const session = createVoiceSession({
+      options: { demo: true, seed: 1 },
+      lane,
+      audioDir: dir,
+      timeoutMs: 80,
+    });
+    await session.start();
+    const stepped = await session.step();
+    assert.equal(opened, 1);
+    assert.equal(fake.sockets.length, 1);
+    assert.ok(fake.aborts >= 1);
+    assert.ok(fake.detects.length >= 2);
+    assert.equal(stepped.clipWav?.subarray(0, 4).toString(), 'RIFF');
+  } finally {
+    lane.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('voice mode rejects the legacy voice socket', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'live-legacy-'));
+  const fake = installFake();
+  let voiceOpens = 0;
+  const { server } = voiceApp(dir, fake, {
+    presynthCatalog: [],
+    loadConfig: async () => ({}),
+    getOta: async () => ({ websocket: { url: 'wss://xrobo-io.qiniuapi.com/v1/ws/', token: 'ticket-token' } }),
+    openVoice() { voiceOpens += 1; return { close() {} }; },
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await waitFor(() => server.audioLane.mode === 'idle');
+    const start = await fetch(`${base}/api/game`, { method: 'POST', headers: { origin: base } });
+    const cookie = start.headers.get('set-cookie').split(';')[0];
+    const ticket = await (await fetch(`${base}/api/connect`, {
+      method: 'POST',
+      headers: { origin: base, cookie },
+    })).json();
+    await new Promise((resolve, reject) => {
+      const ws = new WebSocket(`${base.replace('http:', 'ws:')}/voice?ticket=${ticket.ticket}`, { headers: { origin: base, cookie } });
+      const timer = setTimeout(() => reject(new Error('旧语音连接没有被拒绝')), 1000);
+      ws.on('error', () => { clearTimeout(timer); resolve(); });
+      ws.on('open', () => { clearTimeout(timer); reject(new Error('旧语音连接不该打开')); });
+    });
+    assert.equal(voiceOpens, 0);
+    assert.equal(fake.sockets.length, 1);
   } finally {
     await new Promise(resolve => server.close(resolve));
     await rm(dir, { recursive: true, force: true });

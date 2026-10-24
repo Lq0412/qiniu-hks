@@ -23,12 +23,23 @@ import { isInjectedEcho } from './mixin-link.mjs';
 import { HOST_REVEAL_BRIDGE, scriptedDetect, warmupDetect } from './mixin-prompts.mjs';
 import { roleById, voiceOf } from './mixin-roles.mjs';
 
-const DEFAULT_TIMEOUT_MS = 100_000;
+const DEFAULT_TIMEOUT_MS = 20_000;
 
-function withTimeout(promise, ms, label) {
+function withTimeout(promise, ms, label, onTimeout) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label}超时（${ms}ms）`)), ms);
-    promise.then(value => { clearTimeout(timer); resolve(value); }, error => { clearTimeout(timer); reject(error); });
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn(value);
+    };
+    const timer = setTimeout(() => {
+      try { onTimeout?.(); }
+      catch { /* 取消失败也要结束等待 */ }
+      finish(reject, new Error(`${label}超时（${ms}ms）`));
+    }, ms);
+    promise.then(value => finish(resolve, value), error => finish(reject, error));
   });
 }
 
@@ -61,14 +72,18 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
   const clips = new Map();
 
   async function detectRetry(request) {
+    const detect = () => withTimeout(link.detect(request), timeoutMs, '这一句', () => link.cancelTurn());
     try {
-      return await withTimeout(link.detect(request), timeoutMs, '这一句');
+      return await detect();
     } catch (error) {
       if (error?.code !== 'CLOSED' || link.reconnects >= 1) throw error;
       if (game.phase !== 'error') disconnectMixin(game, { generation: game.generation, now, reason: '连接断开' });
-      await link.reconnect();
-      if (game.phase === 'error') reconnectMixin(game, { generation: game.generation, now });
-      return withTimeout(link.detect(request), timeoutMs, '这一句');
+      try {
+        await link.reconnect();
+      } finally {
+        if (game.phase === 'error') reconnectMixin(game, { generation: game.generation, now });
+      }
+      return detect();
     }
   }
 

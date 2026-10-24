@@ -239,6 +239,13 @@ export function createMixinLink({
         catch (error) { turn = null; reject(error); }
       });
     },
+    cancelTurn() {
+      const current = turn;
+      turn = null;
+      if (current) current.reject(Object.assign(new Error('这一句已取消'), { code: 'CANCELLED' }));
+      try { sendJson({ type: 'abort', reason: 'wake_word_detected' }); }
+      catch { /* 断线时发不出去 */ }
+    },
     abort() {
       if (turn) turn.aborted = true;
       try { sendJson({ type: 'abort', reason: 'wake_word_detected' }); }
