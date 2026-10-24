@@ -69,6 +69,7 @@ export function createMixinLink({
   createSocket = (url, options) => new WebSocket(url, options),
   helloBrief = HELLO_BRIEF,
   handshakeMs = 20000,
+  settleMs = 400,
 } = {}) {
   if (!config?.deviceId || !config?.clientId || !credentials?.url || !credentials?.token) throw new Error('缺少灵矽连接参数。');
   const secrets = [credentials.token, config.deviceId, config.clientId];
@@ -82,13 +83,22 @@ export function createMixinLink({
   let decoder = null;
   let format = 'pcm';
   let turn = null;
+  let seq = 0;
+  let draining = null;
+  const queued = [];
   let opening = null;
   let epoch = 0;
   const injected = [];
   const listeners = new Set();
 
   const emit = event => { for (const listener of [...listeners]) listener(event); };
+  const clearDrain = () => {
+    if (draining) clearTimeout(draining.timer);
+    draining = null;
+  };
   const failTurn = error => {
+    clearDrain();
+    for (const pending of queued.splice(0)) pending.reject(error);
     const current = turn;
     turn = null;
     current?.reject(error);
@@ -100,8 +110,22 @@ export function createMixinLink({
     socket.send(JSON.stringify(body));
   };
 
+  function startQueued() {
+    if (draining || turn || !queued.length) return;
+    turn = queued.shift();
+    injected.push(turn.text);
+    try { sendJson(turn.message); }
+    catch (error) { failTurn(error); }
+  }
+
+  function finishDrain() {
+    clearDrain();
+    startQueued();
+  }
+
   function onMessage(data, binary) {
     if (binary) {
+      if (draining) return;
       const frame = Buffer.from(data);
       let pcm = format === 'pcm' ? frame : null;
       if (format === 'opus' && decoder) {
@@ -128,6 +152,11 @@ export function createMixinLink({
       opening = null;
       return;
     }
+    if (draining) {
+      // stop 没有回合 ID，排空期的第一个 stop 只能归给已取消的旧轮。
+      if (message.type === 'tts' && message.state === 'stop') finishDrain();
+      return;
+    }
     if (message.type === 'stt') {
       const text = typeof message.text === 'string' ? message.text : '';
       emit({ type: 'stt', text, echo: isInjectedEcho(text, injected) });
@@ -146,6 +175,7 @@ export function createMixinLink({
           frames: current.frames,
           format,
         });
+        startQueued();
       }
       return;
     }
@@ -218,6 +248,7 @@ export function createMixinLink({
     async reconnect() {
       if (reconnects >= 1) throw Object.assign(new Error('已经重连过一次'), { code: 'RECONNECT' });
       reconnects += 1;
+      failTurn(Object.assign(new Error('连接已关闭'), { code: 'CLOSED' }));
       const old = socket;
       socket = null;
       ready = false;
@@ -232,17 +263,23 @@ export function createMixinLink({
       if (turn) throw new Error('上一段还没说完');
       const message = buildMixinDetect({ text, voiceId });
       if (Object.hasOwn(message, 'agent_params') && message.agent_params.custom_replace_prompt) throw new Error('listen 不能携带 custom_replace_prompt');
-      injected.push(text);
       return new Promise((resolve, reject) => {
-        turn = { text, spoken: [], pcm: [], frames: [], aborted: false, resolve, reject };
-        try { sendJson(message); }
-        catch (error) { turn = null; reject(error); }
+        queued.push({ seq: ++seq, text, message, spoken: [], pcm: [], frames: [], aborted: false, resolve, reject });
+        startQueued();
       });
     },
     cancelTurn() {
       const current = turn;
       turn = null;
-      if (current) current.reject(Object.assign(new Error('这一句已取消'), { code: 'CANCELLED' }));
+      const cancelled = Object.assign(new Error('这一句已取消'), { code: 'CANCELLED' });
+      if (!current) {
+        // 等待排空也算本句的等待时间，超时后不能再把它发出去。
+        queued.shift()?.reject(cancelled);
+        return;
+      }
+      current.reject(cancelled);
+      clearDrain();
+      draining = { seq: current.seq, timer: setTimeout(finishDrain, settleMs) };
       try { sendJson({ type: 'abort', reason: 'wake_word_detected' }); }
       catch { /* 断线时发不出去 */ }
     },
@@ -257,6 +294,7 @@ export function createMixinLink({
       socket.send(chunk, { binary: true });
     },
     close() {
+      failTurn(Object.assign(new Error('连接已关闭'), { code: 'CLOSED' }));
       try { socket?.close(); } catch { /* 已经关闭 */ }
       decoder?.delete?.();
       decoder = null;

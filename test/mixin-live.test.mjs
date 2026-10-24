@@ -23,7 +23,7 @@ function missingFile() {
   throw error;
 }
 
-function installFake({ hangAccuse = false, failReconnect = false, stallDetects = 0 } = {}) {
+function installFake({ hangAccuse = false, failReconnect = false, stallDetects = 0, onDetect } = {}) {
   const sockets = [];
   const detects = [];
   const fake = { sockets, detects, aborts: 0, hanging: false, armed: false, stallLeft: stallDetects };
@@ -52,6 +52,7 @@ function installFake({ hangAccuse = false, failReconnect = false, stallDetects =
       }
       if (message.type === 'listen' && message.state === 'detect') {
         detects.push(message);
+        if (onDetect?.({ message, socket, send, index: detects.length })) return;
         if (fake.stallLeft > 0) {
           fake.stallLeft -= 1;
           return;
@@ -294,6 +295,7 @@ test('a detect that never stops still lets the next line speak', async () => {
         credentials: { url: 'wss://xrobo-io.qiniuapi.com/v1/ws/', token: TOKEN },
         createSocket: fake.createSocket,
         handshakeMs: 1000,
+        settleMs: 10,
       });
     },
   });
@@ -373,3 +375,77 @@ test('play:voice without credentials stays on the text page', async () => {
     await new Promise(resolve => started.server.close(resolve));
   }
 });
+
+async function liveFixture(onDetect, extra = {}) {
+  const fake = installFake({ onDetect });
+  const link = createMixinLink({
+    config: { deviceId: 'fake-device', clientId: 'fake-client' },
+    credentials: { url: 'wss://xrobo-io.qiniuapi.com/v1/ws/', token: 'fake-token' },
+    createSocket: fake.createSocket,
+    settleMs: 50,
+  });
+  await link.connect();
+  const session = createVoiceSession({
+    options: { demo: true, seed: 1 },
+    lane: { async acquireForGame() { return link; }, releaseGame() {} },
+    timeoutMs: 100,
+    ...extra,
+  });
+  await session.start();
+  return { session, fake, link };
+}
+
+function replyAudio({ socket, send }, value = 2) {
+  send({ type: 'tts', state: 'sentence_start', text: '测试台词' });
+  socket.emit('message', Buffer.alloc(640, value), true);
+  send({ type: 'tts', state: 'stop' });
+}
+
+test('一个 cue 超时后，下一 cue 排空旧帧并拿到自己的 WAV', async () => {
+  const f = await liveFixture(request => {
+    if (request.index === 2) {
+      setTimeout(() => replyAudio(request, 9), 110);
+      return true;
+    }
+    if (request.index === 3) {
+      setTimeout(() => replyAudio(request, 3), 30);
+      return true;
+    }
+  }, { timeoutMs: 80 });
+  try {
+    assert.equal((await f.session.step()).clipWav, null);
+    const next = await f.session.step();
+    assert.ok(next.clipWav?.length > 44);
+    assert.deepEqual(next.clipWav.subarray(44), Buffer.alloc(640, 3));
+  } finally { f.link.close(); }
+});
+
+for (const scenario of [
+  { name: '过渡超时后结局仍出音频', bridgeDelay: null, endingDelay: 0, expected: [3] },
+  { name: '两段独立计时，总耗时可超过单段上限', bridgeDelay: 100, endingDelay: 100, timeoutMs: 160, expected: [2, 3] },
+  { name: '结局使用单独的 revealTimeoutMs', bridgeDelay: 0, endingDelay: 140, timeoutMs: 80, revealTimeoutMs: 240, expected: [2, 3] },
+  { name: '结局失败仍保留过渡音频', bridgeDelay: 0, endingDelay: null, expected: [2] },
+]) {
+  test(`揭晓：${scenario.name}`, async () => {
+    const f = await liveFixture(request => {
+      if (request.index === 1) return;
+      const delay = request.index === 2 ? scenario.bridgeDelay : scenario.endingDelay;
+      if (delay !== null) setTimeout(() => replyAudio(request, request.index), delay);
+      return true;
+    }, {
+      timeoutMs: scenario.timeoutMs ?? 100,
+      ...(scenario.revealTimeoutMs ? { revealTimeoutMs: scenario.revealTimeoutMs } : {}),
+    });
+    try {
+      // 复用开局 cue 的身份，仅把待合成内容设成揭晓，避免完整对局影响计时断言。
+      f.session.game.cue.kind = 'reveal';
+      f.session.game.cue.line = '测试结局';
+      const began = performance.now();
+      const result = await f.session.step();
+      assert.equal(result.reveal, true);
+      assert.equal(f.fake.detects.length, 3);
+      assert.deepEqual(result.clipWav.subarray(44), Buffer.concat(scenario.expected.map(value => Buffer.alloc(640, value))));
+      if (scenario.bridgeDelay === 100) assert.ok(performance.now() - began > scenario.timeoutMs);
+    } finally { f.link.close(); }
+  });
+}

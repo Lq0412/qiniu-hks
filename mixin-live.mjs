@@ -63,7 +63,7 @@ function spokenLine(cue, live) {
   return spoken.slice(0, cap);
 }
 
-export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = DEFAULT_TIMEOUT_MS, revealTimeoutMs = timeoutMs } = {}) {
   if (!lane) throw new Error('缺少语音通道');
   const game = createMixinGame(options);
   const hostVoiceId = voiceOf(roleById('host')).voiceId;
@@ -71,8 +71,8 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
   let link = null;
   const clips = new Map();
 
-  async function detectRetry(request) {
-    const detect = () => withTimeout(link.detect(request), timeoutMs, '这一句', () => link.cancelTurn());
+  async function detectRetry(request, limitMs = timeoutMs) {
+    const detect = () => withTimeout(link.detect(request), limitMs, '这一句', () => link.cancelTurn());
     try {
       return await detect();
     } catch (error) {
@@ -87,13 +87,13 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
     }
   }
 
-  async function speakLive({ text, voiceId, line, allowAsset }) {
+  async function speakLive({ text, voiceId, line, allowAsset, limitMs = timeoutMs }) {
     if (allowAsset && audioDir) {
       const pcm = await (await loadAssets(audioDir)).find({ voiceId, text: line });
       if (pcm?.length) return { pcm, spoken: line, voiceId, via: 'presynth', aborted: false };
     }
     try {
-      const result = await detectRetry({ text, voiceId });
+      const result = await detectRetry({ text, voiceId }, limitMs);
       const aborted = result?.aborted === true;
       const pcm = !aborted && result?.pcm?.length ? result.pcm : null;
       return {
@@ -118,11 +118,13 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
         allowAsset: true,
       });
       if (game.cue?.cueId !== cue.cueId) return { aborted: true, pcm: null, text: cue.line, reveal: true };
+      // 两次 speakLive 各自启动计时；过渡超时后仍独立尝试结局，失败则保留过渡音频。
       const ending = await speakLive({
         text: cue.instruction,
         voiceId,
         line: cue.line,
         allowAsset: false,
+        limitMs: revealTimeoutMs,
       });
       const parts = [bridge.pcm, ending.pcm].filter(part => part?.length);
       return {
