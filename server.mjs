@@ -31,7 +31,12 @@ export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice =
         if (req.method !== 'GET' && req.method !== 'POST') return json(404, { error: '未找到接口。' });
         let body = '';
         if (req.method === 'POST') {
-          for await (const chunk of req) { body += chunk; if (body.length > 20000) throw new Error('请求内容过大。'); }
+          for await (const chunk of req) { body += chunk; if (body.length > 4096) throw new Error('请求内容过大。'); }
+        }
+        if (path.startsWith('/api/mixin/')) {
+          const id = path.split('/')[3];
+          const cookie = /(?:^|;\s*)mixin=([0-9a-f-]+)/.exec(req.headers.cookie ?? '')?.[1];
+          if (!cookie || cookie !== id) return json(409, { error: '这局不属于当前会话。' });
         }
         const result = await mixin.dispatch({ method: req.method, path, body: body ? JSON.parse(body) : {} });
         return json(result.status, result.payload, result.headers ?? {});

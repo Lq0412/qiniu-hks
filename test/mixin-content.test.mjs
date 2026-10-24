@@ -3,14 +3,26 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { ACCUSE_PROMPT, allCards, cardById, drawCards, replyFor, sceneById, SCENES } from '../mixin-bank.mjs';
 import { agentPrompt, openingLine, renderBrief, reportInstruction, stageDirection, toneFor } from '../mixin-prompts.mjs';
-import { HOST, PLAYER_ALIASES, ROLES, createRng, defaultLineup, pickAlias, pickLineup, relationshipLines, roleById } from '../mixin-roles.mjs';
+import { HOST, PLAYER_ALIASES, ROLES, createRng, defaultLineup, pickAlias, pickLineup, relationshipLines, roleById, voiceOf } from '../mixin-roles.mjs';
 
 test('roles are fictional, keep a voice slot, and can be dealt', () => {
   assert.equal(ROLES.length, 5);
   assert.equal(HOST.voice.voiceId, null);
+  assert.match(HOST.voice.description, /播音腔/);
+  assert.equal(HOST.voice.rate, 'medium');
   assert.equal(HOST.voice.verified, false);
+  const described = {
+    claudia: /知性温柔/,
+    astra: /沉稳有质感/,
+    shensi: /低沉慢速/,
+    baobao: /活泼/,
+    xiaosi: /童声/,
+  };
   for (const role of ROLES) {
-    assert.equal(role.voice.voiceId, null);
+    assert.equal(role.voice.voiceId, role.id === 'shensi' ? 'b38d4a6eb8f64c209fa6febfd7f91663' : null);
+    assert.equal(role.voice.label, role.id === 'shensi' ? '深夜播客' : role.voice.label);
+    assert.match(role.voice.description, described[role.id]);
+    assert.equal(typeof role.voice.rate, 'string');
     assert.equal(role.voice.verified, false);
     assert.equal(role.intro.length <= 40, true, role.intro);
     assert.ok(role.catchphrases.length >= 1);
@@ -52,7 +64,8 @@ test('the bank has three scenes of six bounded cards', () => {
 });
 
 test('prompts keep the brief slot and can render every stage direction', () => {
-  assert.match(agentPrompt, /\{\{game_brief\}\}/);
+  assert.match(agentPrompt, /\{\{counter_brief\}\}/);
+  assert.doesNotMatch(agentPrompt, /\{\{game_brief\}\}/);
   assert.match(agentPrompt, /绝不向5号或玩家提问/);
   const brief = renderBrief({
     sceneName: '模型年会',
@@ -85,8 +98,28 @@ test('prompts keep the brief slot and can render every stage direction', () => {
   assert.equal(toneFor('hell'), '笃定');
   assert.equal(toneFor('missing'), '认真');
   assert.match(reportInstruction({ outcome: '潜伏成功', votes: '1/4', catcher: '包包', aiScore: 80, playerLines: ['原话'], titles: ['人形 Transformer'] }), /不得更改/);
-  for (const file of ['mixin-session.mjs', 'mixin-http.mjs', 'mixin-game.mjs', 'humanity.mjs', 'scripts/sim-mixin.mjs']) {
+  for (const file of ['mixin-session.mjs', 'mixin-http.mjs', 'mixin-game.mjs', 'humanity.mjs', 'mixin-roles.mjs', 'mixin-prompts.mjs', 'scripts/sim-mixin.mjs']) {
     const source = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
     assert.doesNotMatch(source, /getUserMedia|from '\.\/linx\.mjs'|new WebSocket/);
+    assert.doesNotMatch(source, /阿柿|阿梨|阿枣|阿桃|9d91653b2adf4aa9ad97e1c8f63fbda3/);
+  }
+  const architecture = readFileSync(new URL('../docs/architecture.md', import.meta.url), 'utf8');
+  assert.doesNotMatch(architecture, /阿柿|阿梨|阿枣|阿桃|9d91653b2adf4aa9ad97e1c8f63fbda3/);
+  assert.match(architecture, /b38d4a6eb8f64c209fa6febfd7f91663/);
+  assert.match(architecture, /深夜播客/);
+  assert.match(architecture, /3\.0–3\.5/);
+  assert.match(architecture, /\{\{counter_brief\}\}/);
+  const previous = process.env.LINX_VOICE_IDS;
+  delete process.env.LINX_VOICE_IDS;
+  try {
+    assert.equal(voiceOf(roleById('shensi')).voiceId, 'b38d4a6eb8f64c209fa6febfd7f91663');
+    assert.equal(voiceOf(HOST).voiceId, null);
+    process.env.LINX_VOICE_IDS = '{"claudia":"override-id"}';
+    assert.equal(voiceOf(roleById('claudia')).voiceId, 'override-id');
+    process.env.LINX_VOICE_IDS = 'not-json';
+    assert.equal(voiceOf(roleById('claudia')).voiceId, null);
+  } finally {
+    if (previous == null) delete process.env.LINX_VOICE_IDS;
+    else process.env.LINX_VOICE_IDS = previous;
   }
 });

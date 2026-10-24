@@ -6,6 +6,7 @@
 import { createTextSession, playScript } from '../mixin-session.mjs';
 
 const stealth = process.argv.includes('--stealth');
+const difficultyGiven = process.argv.includes('--difficulty');
 const difficulty = readArg('--difficulty', 'normal');
 const seed = Number(readArg('--seed', '1'));
 const demoScript = {
@@ -20,9 +21,9 @@ const stealthScript = {
   vote: 2,
 };
 
-const session = stealth
+const session = stealth || difficultyGiven
   ? createTextSession({ demo: false, difficulty, seed, sceneId: 'annual', cardIds: ['A2', 'A1'], roleIds: ['claudia', 'astra', 'shensi', 'baobao'] })
-  : createTextSession({ demo: true, difficulty, seed });
+  : createTextSession({ demo: true, seed });
 const played = await playScript(session, stealth ? stealthScript : demoScript);
 const view = played.view;
 const report = played.report;

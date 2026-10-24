@@ -16,9 +16,9 @@ Node.js 24，执行 `npm ci`、`npm start`，打开 http://127.0.0.1:4173/ 。�
 
 - `npm run check`：语法检查。
 - `npm test`：规则、证据校验、音频资源、协议与HTTP测试。
-- `npm run test:rules`：`game.mjs` 和 `mixin-game.mjs` 的分支覆盖率至少 90%。
+- `npm run test:rules`：`game.mjs`、`mixin-game.mjs` 和 `humanity.mjs` 的分支覆盖率至少 90%。
 - `npm run test:coverage`：自有服务端行覆盖率至少80%。
-- `npm run sim`：离线跑完一局「谁是人类」。`npm run sim -- --stealth` 看潜伏成功。不申请麦克风，不连接灵矽。
+- `npm run sim`：离线跑完一局「谁是人类」，默认是演示局，难度锁在普通。`npm run sim -- --stealth` 看潜伏成功。`--difficulty` 会关掉演示锁。两条都不申请麦克风，不连接灵矽。
 - `npm run smoke:linx`：六题真实平台链路测试，会使用平台额度；输入为合成文字，输出包含真实语音，不替代真人麦克风验收。
 
 ## 谁是人类

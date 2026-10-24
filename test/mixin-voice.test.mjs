@@ -40,4 +40,9 @@ test('seat speech validates the request and falls back without a live voice', as
   assert.equal(custom.voiceUsed, 'later');
   const weird = await dispatchSeatSpeech(async () => { throw 'x'; }, request);
   assert.equal(weird.error, '发言失败');
+  const hung = await dispatchSeatSpeech(() => new Promise(() => {}), request, 20);
+  assert.equal(hung.ok, false);
+  assert.equal(hung.text, request.fallbackText);
+  assert.equal(hung.mode, 'fallback');
+  assert.match(hung.error, /超时/);
 });

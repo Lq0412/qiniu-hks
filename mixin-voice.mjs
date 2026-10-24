@@ -1,6 +1,6 @@
 // 座位发言接口。调用方只说「这个座位用这份音色配置说这段舞台指令」。
-// 会话内能不能真的换音色、能不能带语速和情感，都还没实测。实现方可以忽略 voiceId，
-// 但必须回一段台词，失败时用 fallbackText，不能让这一席卡住。
+// #14 已测过 listen.detect 换音色。本模块只定义请求和超时兜底，不打开连接。
+// 实现方可以忽略 voiceId，但必须回一段台词；抛错、超时或空字符串都改用 fallbackText。
 
 export function speakRequest(input) {
   if (!input || typeof input.cueId !== 'string' || !input.cueId) throw new Error('发言请求缺少 cueId。');
@@ -20,10 +20,18 @@ export function speakRequest(input) {
   };
 }
 
-export async function dispatchSeatSpeech(implement, input) {
+export const SPEECH_TIMEOUT_MS = 8000;
+
+export async function dispatchSeatSpeech(implement, input, timeoutMs = SPEECH_TIMEOUT_MS) {
   const request = speakRequest(input);
+  let timer;
   try {
-    const result = await implement(request);
+    const result = await Promise.race([
+      Promise.resolve().then(() => implement(request)),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('发言超时')), timeoutMs);
+      }),
+    ]);
     const text = typeof result?.text === 'string' ? result.text.trim() : '';
     return {
       ok: true,
@@ -47,6 +55,8 @@ export async function dispatchSeatSpeech(implement, input) {
       voice: request.voice,
       error: error instanceof Error ? error.message : '发言失败',
     };
+  } finally {
+    clearTimeout(timer);
   }
 }
 

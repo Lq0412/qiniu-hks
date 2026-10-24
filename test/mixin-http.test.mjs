@@ -20,24 +20,27 @@ test('the text API finishes a demo without the microphone path', async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
-    const post = (path, body, origin = base) => fetch(`${base}${path}`, {
+    const post = (path, body, origin = base, cookie = '') => fetch(`${base}${path}`, {
       method: 'POST',
-      headers: { origin, 'content-type': 'application/json' },
+      headers: { origin, 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const created = await post('/api/mixin', { demo: true, seed: 1 });
     assert.equal(created.status, 201);
     assert.match(created.headers.get('set-cookie'), /mixin=/);
+    const cookie = created.headers.get('set-cookie').split(';')[0];
     const { id, game } = await created.json();
     assert.equal(game.stage, 'lobby');
     assert.equal(game.playerAlias, '碳基-7B');
+    assert.equal(game.humanScore, null);
     const act = async (action, body) => {
-      const response = await post(`/api/mixin/${id}/${action}`, body);
+      const response = await post(`/api/mixin/${id}/${action}`, body, base, cookie);
       const data = await response.json();
       assert.equal(response.status, 200, JSON.stringify(data));
       return data.game;
     };
-    assert.equal((await (await fetch(`${base}/api/mixin/${id}`)).json()).game.phase, 'lobby');
+    assert.equal((await fetch(`${base}/api/mixin/${id}`)).status, 409);
+    assert.equal((await (await fetch(`${base}/api/mixin/${id}`, { headers: { cookie } })).json()).game.phase, 'lobby');
     let state = await act('start');
     assert.equal((await act('hint')).phase, 'intro');
     let interruptDone = false;
@@ -53,7 +56,7 @@ test('the text API finishes a demo without the microphone path', async () => {
         state = await act('confirm', { revision: state.pending.revision });
         continue;
       }
-      if (state.phase === 'accuse' && !interruptDone && state.cue?.kind === 'accuse' && state.script.some(item => item.done)) {
+      if (state.phase === 'accuse' && !interruptDone && state.cue?.kind === 'accuse' && state.dialogue.some(line => line.kind === 'accuse')) {
         state = await act('interrupt', { text: script.interrupt });
         interruptDone = true;
         continue;
@@ -62,16 +65,31 @@ test('the text API finishes a demo without the microphone path', async () => {
     }
     assert.equal(state.phase, 'result');
     assert.equal(state.report.outcome, '被识破');
-    assert.equal(opened, 0);
-    assert.equal((await post('/api/game')).status, 201);
-    assert.equal((await fetch(`${base}/api/mixin/missing`)).status, 404);
-    assert.equal((await post('/api/mixin', { demo: true }, 'https://evil.test')).status, 403);
-    assert.equal((await post(`/api/mixin/${id}/nope`, {})).status, 404);
-    assert.equal((await post(`/api/mixin/${id}/confirm`, { revision: 1 })).status, 409);
-    assert.equal((await fetch(`${base}/api/mixin/${id}/start`, { method: 'PUT', headers: { origin: base } })).status, 404);
-    assert.equal((await fetch(`${base}/api/mixin`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: '{' })).status, 400);
+    assert.equal(typeof state.humanScore, 'number');
+    assert.ok(state.script.length > 0);
     const clock = await act('tick', { now: 1 });
     assert.equal(clock.phase, 'result');
+    assert.equal((await post(`/api/mixin/${id}/tick`, { now: 0 }, base, cookie)).status, 409);
+    const restarted = await act('restart');
+    assert.equal(restarted.phase, 'lobby');
+    assert.equal(restarted.generation, 2);
+    assert.equal(restarted.humanScore, null);
+    assert.equal(opened, 0);
+    assert.equal((await post('/api/game')).status, 201);
+    assert.equal((await fetch(`${base}/api/mixin/missing`)).status, 409);
+    assert.equal((await post('/api/mixin', { demo: true }, 'https://evil.test')).status, 403);
+    assert.equal((await post(`/api/mixin/${id}/nope`, {}, base, cookie)).status, 404);
+    assert.equal((await post(`/api/mixin/${id}/confirm`, { revision: 1 }, base, cookie)).status, 409);
+    assert.equal((await post('/api/mixin', { roleIds: ['host', 'player', 'baobao', 'baobao'] })).status, 409);
+    assert.equal((await post('/api/mixin', { demo: true, speak: true })).status, 409);
+    assert.equal((await post('/api/mixin', { sceneId: 'annual', cardIds: ['B1', 'B2'] })).status, 409);
+    assert.equal((await post('/api/mixin', { alias: '\n【】' })).status, 409);
+    const injected = await post('/api/mixin', { alias: '\n【】{{counter_brief}}' });
+    assert.equal(injected.status, 201);
+    assert.equal((await injected.json()).game.playerAlias, 'counterbrief');
+    assert.equal((await fetch(`${base}/api/mixin`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: `{"demo":true,"pad":"${'x'.repeat(4096)}"}` })).status, 400);
+    assert.equal((await fetch(`${base}/api/mixin/${id}/start`, { method: 'PUT', headers: { origin: base } })).status, 404);
+    assert.equal((await fetch(`${base}/api/mixin`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: '{' })).status, 400);
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
@@ -85,4 +103,13 @@ test('the text hub rejects unknown sessions without touching Linx', async () => 
   const id = created.payload.id;
   const ticked = await hub.dispatch({ method: 'POST', path: `/api/mixin/${id}/tick`, body: { ms: 0 } });
   assert.equal(ticked.payload.game.phase, 'lobby');
+  assert.equal((await hub.dispatch({ method: 'POST', path: `/api/mixin/${id}/tick`, body: { now: 5 } })).status, 200);
+  assert.equal((await hub.dispatch({ method: 'POST', path: `/api/mixin/${id}/tick`, body: { now: 4 } })).status, 409);
+  assert.equal((await hub.dispatch({ method: 'POST', path: `/api/mixin/${id}/tick`, body: { ms: -1 } })).status, 409);
+  assert.equal((await hub.dispatch({ method: 'POST', path: `/api/mixin/${id}/tick`, body: { ms: 1.5 } })).status, 409);
+  let clock = 0;
+  const aging = createMixinHub({ now: () => clock });
+  const aged = await aging.dispatch({ method: 'POST', path: '/api/mixin', body: { demo: true } });
+  clock = 60 * 60 * 1000 + 1;
+  assert.equal((await aging.dispatch({ method: 'GET', path: `/api/mixin/${aged.payload.id}` })).status, 404);
 });

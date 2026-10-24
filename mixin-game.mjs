@@ -4,7 +4,7 @@
 import { randomUUID } from 'node:crypto';
 import { cardById, drawCards, replyFor, sceneById, SCENES } from './mixin-bank.mjs';
 import { openingLine, renderBrief, stageDirection, toneFor } from './mixin-prompts.mjs';
-import { createRng, defaultLineup, pickAlias, pickLineup, relationshipLines, roleById, seatFrom } from './mixin-roles.mjs';
+import { PLAYER_ALIASES, ROLES, createRng, defaultLineup, pickAlias, pickLineup, relationshipLines, roleById, seatFrom, voiceOf } from './mixin-roles.mjs';
 import {
   clampScore,
   contentLength,
@@ -60,7 +60,7 @@ export function isStageEcho(text, notes, hook, game) {
     if (custom === false) return false;
   }
   const normalized = normalizeEcho(text);
-  if (normalized.includes('舞台指令') || normalized.includes('game_brief')) return true;
+  if (normalized.includes('舞台指令') || normalized.includes('counter_brief') || normalized.includes('game_brief')) return true;
   if (normalized.length < 6) return false;
   return notes.some(sample => {
     if (sample === normalized) return true;
@@ -78,27 +78,73 @@ export function assertVerbatim(quote, corpus) {
   return clean;
 }
 
+const SEATABLE = new Set(ROLES.map(role => role.id));
+
+function mustScene(id) {
+  try { return sceneById(id); } catch { throw new MixinError('未知场景。'); }
+}
+
+function mustCard(id) {
+  try { return cardById(id); } catch { throw new MixinError('未知话题卡。'); }
+}
+
+function cleanAlias(alias) {
+  if (typeof alias !== 'string') throw new MixinError('代号不合法。');
+  if (PLAYER_ALIASES.includes(alias)) return alias;
+  const cleaned = alias.replace(/[^\u4e00-\u9fffA-Za-z0-9-]/g, '').slice(0, 12);
+  if (!cleaned) throw new MixinError('代号不合法。');
+  return cleaned;
+}
+
+function seatsFromIds(roleIds) {
+  if (!Array.isArray(roleIds) || roleIds.length !== 4) throw new MixinError('桌上要有四个 AI 座位。');
+  if (roleIds.some(id => !SEATABLE.has(id))) throw new MixinError('角色必须是可上桌的 AI。');
+  if (new Set(roleIds).size !== 4) throw new MixinError('角色不能重复。');
+  return roleIds.map((id, index) => seatFrom(id, index + 1));
+}
+
+function listedCards(cardIds) {
+  if (!Array.isArray(cardIds) || cardIds.length !== 2) throw new MixinError('一局需要两张话题卡。');
+  if (new Set(cardIds).size !== 2) throw new MixinError('话题卡不能重复。');
+  return cardIds.map(id => mustCard(id));
+}
+
+function cardsForScene(cardIds, scene) {
+  const cards = listedCards(cardIds);
+  if (cards.some(card => card.sceneId !== scene.id)) throw new MixinError('话题卡不属于当前场景。');
+  return cards;
+}
+
 export function createMixinGame(options = {}) {
+  if (options == null || typeof options !== 'object' || Array.isArray(options)) throw new MixinError('建局参数不合法。');
+  if ('demo' in options && typeof options.demo !== 'boolean') throw new MixinError('demo 必须是布尔值。');
   const demo = options.demo === true;
   const requestedDifficulty = options.difficulty ?? 'normal';
+  if ('difficulty' in options && !['easy', 'normal', 'hell'].includes(requestedDifficulty)) throw new MixinError(`未知难度 ${requestedDifficulty}`);
   if (!demo && !['easy', 'normal', 'hell'].includes(requestedDifficulty)) throw new MixinError(`未知难度 ${requestedDifficulty}`);
+  if ('seed' in options && options.seed != null && !Number.isInteger(options.seed)) throw new MixinError('seed 必须是整数。');
   const difficulty = demo ? 'normal' : requestedDifficulty;
   const seed = Number.isInteger(options.seed) ? options.seed : 1;
   const rng = createRng(seed);
-  const scene = demo ? sceneById('annual') : (options.sceneId ? sceneById(options.sceneId) : SCENES[Math.floor(rng() * SCENES.length)]);
-  let cards;
-  if (demo) cards = [cardById('A2'), cardById('A1')];
+  let scene;
+  if (demo) scene = mustScene('annual');
+  else if (options.sceneId) scene = mustScene(options.sceneId);
   else if (Array.isArray(options.cardIds)) {
-    if (options.cardIds.length !== 2) throw new MixinError('一局需要两张话题卡。');
-    cards = options.cardIds.map(id => cardById(id));
-  } else cards = drawCards(scene, rng);
-  let seats;
-  if (demo) seats = defaultLineup();
-  else if (Array.isArray(options.roleIds)) {
-    if (options.roleIds.length !== 4) throw new MixinError('桌上要有四个 AI 座位。');
-    seats = options.roleIds.map((id, index) => seatFrom(id, index + 1));
-  } else seats = pickLineup(rng);
-  const alias = demo ? '碳基-7B' : (options.alias ?? pickAlias(rng));
+    const probed = listedCards(options.cardIds);
+    const sceneIds = new Set(probed.map(card => card.sceneId));
+    if (sceneIds.size !== 1) throw new MixinError('话题卡不属于当前场景。');
+    scene = mustScene([...sceneIds][0]);
+  } else scene = SCENES[Math.floor(rng() * SCENES.length)];
+  let cards;
+  if (demo) {
+    if (Array.isArray(options.cardIds)) cardsForScene(options.cardIds, scene);
+    cards = [mustCard('A2'), mustCard('A1')];
+  } else if (Array.isArray(options.cardIds)) cards = cardsForScene(options.cardIds, scene);
+  else cards = drawCards(scene, rng);
+  if (Array.isArray(options.roleIds)) seatsFromIds(options.roleIds);
+  const seats = demo || !Array.isArray(options.roleIds) ? (demo ? defaultLineup() : pickLineup(rng)) : seatsFromIds(options.roleIds);
+  const alias = options.alias == null ? null : cleanAlias(options.alias);
+  const playerAlias = demo ? '碳基-7B' : (alias ?? pickAlias(rng));
   const now = options.now ?? 0;
   return {
     id: randomUUID(),
@@ -113,7 +159,7 @@ export function createMixinGame(options = {}) {
     scene: { id: scene.id, name: scene.name, background: scene.background },
     cards: cards.map(card => ({ id: card.id, prompt: card.prompt, examplePlayer: card.examplePlayer, keywords: [...card.keywords], replies: { ...card.replies } })),
     seats,
-    playerAlias: alias,
+    playerAlias,
     playerSeat: 5,
     round: 0,
     order: [],
@@ -126,6 +172,8 @@ export function createMixinGame(options = {}) {
     revision: 0,
     emptyRetries: 0,
     hintReleased: false,
+    hintTaken: false,
+    debug: options.debug === true,
     nudged: false,
     stallMark: null,
     human: { score: 0, breakdown: [], aiScore: 100 },
@@ -153,7 +201,7 @@ export function createMixinGame(options = {}) {
       sceneId: options.sceneId ?? null,
       cardIds: options.cardIds ?? null,
       roleIds: options.roleIds ?? null,
-      alias: options.alias ?? null,
+      alias,
     },
   };
 }
@@ -215,6 +263,7 @@ export function revealHint(game, { generation }) {
   assertGen(game, generation);
   if (game.phase !== 'round_player') return { accepted: false, reason: 'phase', example: null, view: viewMixin(game) };
   game.hintReleased = true;
+  game.hintTaken = true;
   const example = currentCard(game).examplePlayer;
   return { accepted: true, reason: 'hint', example, view: viewMixin(game) };
 }
@@ -370,23 +419,27 @@ export function viewMixin(game) {
     error: game.error,
     hintReleased: game.hintReleased,
     example: game.hintReleased && game.phase === 'round_player' ? card.examplePlayer : null,
-    cue: game.cue ? publicCue(game.cue) : null,
-    humanScore: game.human.score,
-    aiScore: game.human.aiScore,
+    cue: game.cue ? publicCue(game.cue, game) : null,
+    humanScore: showSecret || game.debug ? game.human.score : null,
+    aiScore: showSecret || game.debug ? game.human.aiScore : null,
     interrupts: game.interrupts.length,
     playerVote: game.playerVote,
     voteLocked: game.voteLocked,
-    votes: game.announced ? game.votePlan : null,
+    votes: visibleVotes(game, showSecret || game.debug),
     outcome: showSecret ? game.judged?.outcome ?? null : null,
     report: showSecret ? game.report : null,
-    script: game.script.map(item => ({ seat: item.seat, target: item.target, quote: item.quote, done: !!item.done, aborted: !!item.aborted })),
+    script: showSecret || game.debug ? game.script.map(item => ({ seat: item.seat, target: item.target, quote: item.quote, done: !!item.done, aborted: !!item.aborted })) : [],
     dialogue: game.dialogue.slice(-80).map(line => ({ seat: line.seat, name: line.name, text: line.text, kind: line.kind, round: line.round })),
     trace: game.trace.map(item => ({ phase: item.phase, at: item.at })),
     brief: renderBrief(briefState(game)),
   };
 }
 
-function publicCue(cue) {
+function publicCue(cue, game) {
+  const secret = game.phase === 'reveal' || game.phase === 'result' || game.debug;
+  const instruction = cue.kind === 'vote' && !secret
+    ? `【舞台指令】你是${cue.seat}号${cue.name}。请用不超过20字宣布你的投票。`
+    : cue.instruction;
   return {
     cueId: cue.cueId,
     kind: cue.kind,
@@ -394,9 +447,20 @@ function publicCue(cue) {
     roleId: cue.roleId,
     name: cue.name,
     voice: { ...cue.voice },
-    instruction: cue.instruction,
+    instruction,
     deadlineAt: cue.deadlineAt,
   };
+}
+
+function visibleVotes(game, showSecret) {
+  if (!game.votePlan) return null;
+  if (showSecret) return game.votePlan;
+  const spoken = new Set(game.lines.filter(line => line.kind === 'vote').map(line => line.seat));
+  const votes = game.votePlan.votes.filter(vote => spoken.has(vote.seat));
+  if (!votes.length) return null;
+  const tally = {};
+  for (const vote of votes) tally[vote.targetSeat] = (tally[vote.targetSeat] ?? 0) + 1;
+  return { votes, tally };
 }
 
 function assertGen(game, generation) {
@@ -419,23 +483,104 @@ function refused(game, reason) {
   return { accepted: false, reason, view: viewMixin(game) };
 }
 
+function capturePhase(game) {
+  return {
+    phase: game.phase,
+    stage: game.stage,
+    phaseEnteredAt: game.phaseEnteredAt,
+    cue: game.cue,
+    queue: game.queue.slice(),
+    deadlineAt: game.deadlineAt,
+    traceLen: game.trace.length,
+    round: game.round,
+    order: game.order.slice(),
+    emptyRetries: game.emptyRetries,
+    hintReleased: game.hintReleased,
+    hintTaken: game.hintTaken,
+    nudged: game.nudged,
+    stallMark: game.stallMark,
+    pending: game.pending,
+    note: game.note,
+    script: game.script,
+    announced: game.announced,
+    voteLocked: game.voteLocked,
+    votePlan: game.votePlan,
+    judged: game.judged,
+    report: game.report,
+    cueSeq: game.cueSeq,
+    echoLen: game.echoNotes.length,
+    error: game.error,
+  };
+}
+
+function restorePhase(game, saved) {
+  Object.assign(game, {
+    phase: saved.phase,
+    stage: saved.stage,
+    phaseEnteredAt: saved.phaseEnteredAt,
+    cue: saved.cue,
+    queue: saved.queue,
+    deadlineAt: saved.deadlineAt,
+    round: saved.round,
+    order: saved.order,
+    emptyRetries: saved.emptyRetries,
+    hintReleased: saved.hintReleased,
+    hintTaken: saved.hintTaken,
+    nudged: saved.nudged,
+    stallMark: saved.stallMark,
+    pending: saved.pending,
+    note: saved.note,
+    script: saved.script,
+    announced: saved.announced,
+    voteLocked: saved.voteLocked,
+    votePlan: saved.votePlan,
+    judged: saved.judged,
+    report: saved.report,
+    cueSeq: saved.cueSeq,
+    error: saved.error,
+  });
+  game.trace.splice(saved.traceLen);
+  game.echoNotes.splice(saved.echoLen);
+}
+
 function enter(game, phase, now) {
-  game.phase = phase;
-  game.stage = phase;
-  game.phaseEnteredAt = now;
-  game.cue = null;
-  game.queue = [];
-  game.deadlineAt = null;
-  game.trace.push({ phase, at: now });
-  if (phase === 'intro') beginIntro(game, now);
-  else if (phase === 'round_ai') beginRoundAi(game, now);
-  else if (phase === 'round_player') beginPlayer(game, now);
-  else if (phase === 'round_wrap') beginWrap(game, now);
-  else if (phase === 'accuse') beginAccuse(game, now);
-  else if (phase === 'defense') beginDefense(game, now);
-  else if (phase === 'vote') beginVote(game, now);
-  else if (phase === 'reveal') beginReveal(game, now);
-  else if (phase === 'result') beginResult(game);
+  const saved = capturePhase(game);
+  try {
+    game.phase = phase;
+    game.stage = phase;
+    game.phaseEnteredAt = now;
+    game.cue = null;
+    game.queue = [];
+    game.deadlineAt = null;
+    game.trace.push({ phase, at: now });
+    if (phase === 'intro') beginIntro(game, now);
+    else if (phase === 'round_ai') beginRoundAi(game, now);
+    else if (phase === 'round_player') beginPlayer(game, now);
+    else if (phase === 'round_wrap') beginWrap(game, now);
+    else if (phase === 'accuse') beginAccuse(game, now);
+    else if (phase === 'defense') beginDefense(game, now);
+    else if (phase === 'vote') beginVote(game, now);
+    else if (phase === 'reveal') beginReveal(game, now);
+    else if (phase === 'result') beginResult(game);
+    const needsCue = ['intro', 'round_ai', 'round_wrap', 'accuse', 'reveal'].includes(phase);
+    if (needsCue && !game.cue) throw new MixinError('这一阶段没有台词。');
+  } catch (error) {
+    restorePhase(game, saved);
+    const message = error instanceof MixinError ? error.message : '阶段切换失败，局面已回滚。';
+    if (!game.cue && !['lobby', 'round_player', 'defense', 'result', 'error'].includes(game.phase)) {
+      game.previousPhase = game.phase;
+      game.phase = 'error';
+      game.stage = 'error';
+      game.error = message;
+      game.note = message;
+      game.trace.push({ phase: 'error', at: now });
+    }
+    throw new MixinError(message);
+  }
+}
+
+function safeReply(card, roleId) {
+  try { return replyFor(card, roleId).slice(0, 40); } catch { return '这题我用一句话带过。'; }
 }
 
 function beginIntro(game, now) {
@@ -470,7 +615,7 @@ function beginRoundAi(game, now) {
     cues.push(cueFields(game, {
       kind: 'answer', seat: seat.seat, roleId: seat.roleId, voice: seat.voice,
       timeoutMs: TIMEOUTS.aiCue, maxChars: 40, card: card.prompt, spoken: '还没有',
-      fallbackText: replyFor(card, seat.roleId).slice(0, 40),
+      fallbackText: safeReply(card, seat.roleId),
     }));
   }
   arm(game, cues, now, TIMEOUTS.roundAiHard);
@@ -594,7 +739,7 @@ function cueFields(game, fields) {
     roleId: role.id,
     name: role.name,
     personality: role.personality,
-    voice: { ...(fields.voice ?? role.voice) },
+    voice: { ...(fields.voice ?? voiceOf(role)) },
     fallbackText: fields.fallbackText,
     instruction: '',
     scriptIndex: fields.scriptIndex ?? null,
@@ -731,7 +876,7 @@ function commitPending(game, now) {
     typed: game.pending.typed,
     durationMs: game.pending.durationMs,
     silenceMs: game.pending.silenceMs,
-    usedHint: kind === 'speak' && game.hintReleased,
+    usedHint: kind === 'speak' && game.hintTaken,
     stall: kind === 'speak' ? game.stallMark : null,
     keywords: kind === 'speak' ? [...card.keywords] : [],
     quoted,

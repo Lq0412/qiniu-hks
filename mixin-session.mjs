@@ -1,7 +1,7 @@
 // 文字对局。不申请麦克风，不连接灵矽，不读设备凭据。
 // 说话只走座位调度接口；实现方失败时用兜底台词，局面继续。
 
-import { TIMEOUTS, MixinError, confirmPlayer, createMixinGame, fulfillCue, interruptMixin, revealHint, castVote, startMixin, submitPlayerText, tickMixin, viewMixin } from './mixin-game.mjs';
+import { TIMEOUTS, MixinError, confirmPlayer, createMixinGame, fulfillCue, interruptMixin, revealHint, restartMixin, castVote, startMixin, submitPlayerText, tickMixin, viewMixin } from './mixin-game.mjs';
 import { createScriptedSpeaker, dispatchSeatSpeech } from './mixin-voice.mjs';
 
 export function createTextSession(options = {}) {
@@ -46,6 +46,7 @@ export function createTextSession(options = {}) {
     vote(seat) { return castVote(game, { generation: game.generation, seat, now }); },
     interrupt(text) { return interruptMixin(game, { generation: game.generation, text, now }); },
     hint() { return revealHint(game, { generation: game.generation }); },
+    restart() { return restartMixin(game, { now }); },
     tick(ms = 0) {
       now += ms;
       return tickMixin(game, now);
