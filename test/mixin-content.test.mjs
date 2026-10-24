@@ -123,6 +123,9 @@ test('prompts keep the brief slot and can render every stage direction', () => {
   assert.match(architecture, /深夜播客/);
   assert.match(architecture, /1965294143278125057/);
   assert.match(architecture, /4bdb867c07d54e119950b5bda44673a7/);
+  assert.match(architecture, /MIXIN_VOICE_IDS/);
+  assert.match(architecture, /LINX_VOICE_IDS/);
+  assert.match(architecture, /顺序见探针脚本/);
   assert.match(architecture, /角色id=音色id/);
   assert.match(architecture, /3\.0–3\.5/);
   assert.match(architecture, /\{\{counter_brief\}\}/);
@@ -132,24 +135,24 @@ test('prompts keep the brief slot and can render every stage direction', () => {
   }
   assert.equal(Number(VOICE_CATALOG.baobao.voiceId).toString() === VOICE_CATALOG.baobao.voiceId, false);
   assert.equal(Number(VOICE_CATALOG.baobao.fallbackVoiceId).toString() === VOICE_CATALOG.baobao.fallbackVoiceId, false);
-  const previous = process.env.LINX_VOICE_IDS;
-  delete process.env.LINX_VOICE_IDS;
+  const previous = process.env.MIXIN_VOICE_IDS;
+  delete process.env.MIXIN_VOICE_IDS;
   try {
     assert.equal(voiceOf(roleById('shensi')).voiceId, 'b38d4a6eb8f64c209fa6febfd7f91663');
     assert.equal(voiceOf(roleById('shensi')).label, '深夜播客');
     assert.equal(voiceOf(roleById('shensi')).fallbackVoiceId, null);
     assert.equal(voiceOf(HOST).voiceId, '4bdb867c07d54e119950b5bda44673a7');
-    process.env.LINX_VOICE_IDS = 'claudia=override-id, baobao=1965294143278125057';
+    process.env.MIXIN_VOICE_IDS = 'claudia=override-id, baobao=1965294143278125057';
     assert.equal(voiceOf(roleById('claudia')).voiceId, 'override-id');
     assert.equal(typeof voiceOf(roleById('baobao')).voiceId, 'string');
     assert.equal(voiceOf(roleById('baobao')).voiceId, '1965294143278125057');
     assert.equal(voiceOf(roleById('astra')).voiceId, '2e7965636b0d4472ae51e75f419dff41');
-    process.env.LINX_VOICE_IDS = 'not-a-map';
+    process.env.MIXIN_VOICE_IDS = 'not-a-map';
     assert.equal(voiceOf(roleById('claudia')).voiceId, '8fca6d5172fc4c309c2d16352ca8a9b3');
-    process.env.LINX_VOICE_IDS = 'claudia=';
+    process.env.MIXIN_VOICE_IDS = 'claudia=';
     assert.equal(voiceOf(roleById('claudia')).voiceId, '8fca6d5172fc4c309c2d16352ca8a9b3');
   } finally {
-    if (previous == null) delete process.env.LINX_VOICE_IDS;
-    else process.env.LINX_VOICE_IDS = previous;
+    if (previous == null) delete process.env.MIXIN_VOICE_IDS;
+    else process.env.MIXIN_VOICE_IDS = previous;
   }
 });

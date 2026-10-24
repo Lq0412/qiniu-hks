@@ -1,5 +1,5 @@
 // 谁是人类的虚构角色。名字只借风格，不点真实产品。
-// 音色 ID 在 mixin-voice.mjs，按角色 id 索引。LINX_VOICE_IDS 用「角色id=音色id」逗号分隔覆盖。
+// 音色 ID 在 mixin-voice.mjs，按角色 id 索引。MIXIN_VOICE_IDS 用「角色id=音色id」逗号分隔覆盖。
 // 群主音色首音约 3.0–3.5 秒，开场、规则和串场要预合成。灵矽对同一句话、同一音色有 TTS 缓存，第二次音频与第一次完全一致。这两件事先记在这里，实现留给语音调度。
 
 import { VOICE_CATALOG, voiceIdOverrides } from './mixin-voice.mjs';

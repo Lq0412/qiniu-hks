@@ -4,8 +4,9 @@
 //
 // 音色 ID 不是密钥。voiceId 一律是字符串：包包的 ID 是纯数字，转成 Number 会丢精度。
 // 备选 ID 先记在表里，本步不在失败时自动换音色。群主固定用典型播音女，一局里不换。
-// 运行时覆盖：LINX_VOICE_IDS=角色id=音色id,角色id=音色id
+// 运行时覆盖：MIXIN_VOICE_IDS=角色id=音色id,角色id=音色id
 // 等号两侧可有空格。缺等号或空 id 的项忽略。未写到的角色继续用下表。
+// 探针的 LINX_VOICE_IDS 是另一套按位置排列的列表，这里不读。
 
 export const VOICE_CATALOG = {
   host: {
@@ -40,7 +41,7 @@ export const VOICE_CATALOG = {
   },
 };
 
-export function voiceIdOverrides(raw = process.env.LINX_VOICE_IDS) {
+export function voiceIdOverrides(raw = process.env.MIXIN_VOICE_IDS) {
   const map = {};
   if (typeof raw !== 'string' || !raw.trim()) return map;
   for (const part of raw.split(',')) {
