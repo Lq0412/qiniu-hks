@@ -15,7 +15,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 button:focus-visible, input:focus-visible, label:focus-within, .card[data-vote]:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 [hidden] { display: none !important; }
 
-#app { position: fixed; inset: 0; display: grid; place-items: center; overflow: hidden; }
+#app { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .stage { position: relative; flex: none; width: 1280px; height: 720px; overflow: hidden; transform-origin: center center;
   background: radial-gradient(900px 420px at 50% -10%, #3a1d3c 0%, transparent 70%), var(--bg); }
 .boot { display: grid; place-items: center; text-align: center; gap: 12px; }
@@ -243,8 +243,8 @@ button:focus-visible, input:focus-visible, label:focus-within, .card[data-vote]:
 .box::after { content: "AI ✓"; position: absolute; right: 10px; top: 12px; font: 700 15px var(--font); color: var(--ink); transform: rotate(-8deg); background: #fff; padding: 0 4px; border: 2px solid var(--ink); }
 .box.fall { animation: boxfall .9s cubic-bezier(.5,0,.9,.6) forwards; }
 .box.gone { display: none; }
-.stamp { position: absolute; left: 130px; top: 480px; z-index: 30; max-width: 400px; padding: 6px 22px; border: 7px solid var(--red); border-radius: 14px; color: var(--red);
-  font: 800 46px var(--font); letter-spacing: .08em; text-align: center; transform: rotate(-12deg); background: rgba(255,246,229,.92); box-shadow: 0 0 0 3px var(--ink); opacity: 0; }
+.stamp { position: absolute; left: 120px; top: 470px; z-index: 30; max-width: 360px; padding: 6px 22px; border: 7px solid var(--red); border-radius: 14px; color: var(--red);
+  font: 800 38px/1.15 var(--font); letter-spacing: .04em; text-align: center; transform: rotate(-12deg); background: rgba(255,246,229,.92); box-shadow: 0 0 0 3px var(--ink); opacity: 0; }
 .stamp small { display: block; font-size: 15px; letter-spacing: .2em; margin-top: -4px; }
 .stamp.on { animation: stamp .32s cubic-bezier(.6,0,.9,.4) both; }
 .side { position: absolute; left: 540px; right: 96px; top: 84px; display: flex; flex-direction: column; gap: 12px; }
