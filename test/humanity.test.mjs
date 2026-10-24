@@ -237,7 +237,6 @@ test('decimals followed by a measure word or 刻 are not clock times', () => {
   assert.equal(normalizeForMatch('一点五元'), '一点五元');
   assert.equal(normalizeForMatch('三点五万'), '三点五万');
   assert.equal(normalizeForMatch('七点三刻'), '七点三刻');
-  assert.equal(normalizeForMatch('7:30倍'), '7:30倍');
   assert.equal(normalizeForMatch('七点三'), '7:30');
   assert.equal(normalizeForMatch('三点五'), '3:50');
   assert.equal(normalizeForMatch('七点三十'), '7:30');
@@ -246,6 +245,23 @@ test('decimals followed by a measure word or 刻 are not clock times', () => {
   assert.equal(hitsKeyword('一点五公里', ['1:50']), false);
   assert.equal(hitsKeyword('七点三刻见', ['7:30']), false);
   assert.equal(hitsKeyword('七点三出门', ['7:30']), true);
+});
+
+test('half hours and numeric clocks stay times when a measure word follows', () => {
+  assert.equal(normalizeForMatch('八点半只能到'), '8:30只能到');
+  assert.equal(normalizeForMatch('9:30只剩'), '9:30只剩');
+  assert.equal(normalizeForMatch('３：３０只剩我'), '3:30只剩我');
+  assert.equal(normalizeForMatch('九点半千万别迟到'), '9:30千万别迟到');
+  assert.equal(normalizeForMatch('七点半两个人'), '7:30两个人');
+  assert.equal(normalizeForMatch('七点半成交'), '7:30成交');
+  assert.equal(normalizeForMatch('七点半度假'), '7:30度假');
+  assert.equal(normalizeForMatch('三点半次日'), '3:30次日');
+  assert.equal(normalizeForMatch('三点五倍'), '三点五倍');
+  assert.equal(normalizeForMatch('一点五公里'), '一点五公里');
+  assert.equal(normalizeForMatch('七点三刻'), '七点三刻');
+  assert.equal(hitsKeyword('八点半只能到', ['8:30']), true);
+  assert.equal(hitsKeyword('七点半两个人', ['7:30']), true);
+  assert.equal(hitsKeyword('七点半成交', ['7:30']), true);
 });
 
 test('quoting someone else is a calm frame only when six characters match', () => {

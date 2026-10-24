@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ACCUSE_PROMPT, allCards, cardById, drawCards, replyFor, sceneById, SCENES } from '../mixin-bank.mjs';
@@ -10,12 +11,13 @@ import { HOST, PLAYER_ALIASES, ROLES, createRng, defaultLineup, pickAlias, pickL
 import { VOICE_CATALOG } from '../mixin-voice.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const SKIP_DIRS = new Set(['node_modules', '.git', 'coverage', 'probe-results', 'playwright-report', 'test-results']);
+const SKIP_DIRS = new Set(['node_modules', '.git', 'coverage', 'probe-results', 'playwright-report', 'test-results', 'presynth']);
+const SKIP_FILES = new Set(['.linx-device.json']);
 
 function walkRepoFiles(dir = ROOT) {
   const files = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (SKIP_DIRS.has(entry.name)) continue;
+    if (SKIP_DIRS.has(entry.name) || SKIP_FILES.has(entry.name)) continue;
     const full = join(dir, entry.name);
     if (entry.isDirectory()) files.push(...walkRepoFiles(full));
     else if (entry.isFile()) files.push(full);
@@ -200,5 +202,20 @@ test('retired voice scan walks files when git is unavailable', () => {
   assert.ok(files.some(file => file.endsWith('/test/mixin-content.test.mjs')));
   assert.ok(files.every(file => !file.split('/').includes('node_modules')));
   assert.ok(files.every(file => !file.split('/').includes('.git')));
+  assert.ok(files.every(file => !file.split('/').includes('presynth')));
+  assert.ok(files.every(file => !file.endsWith('.linx-device.json')));
   assertNoRetiredVoice(files);
+});
+
+test('voice scan walk skips device secrets and presynth audio', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mixin-scan-'));
+  try {
+    mkdirSync(join(dir, 'presynth'));
+    writeFileSync(join(dir, 'presynth', 'host.wav'), 'RIFF');
+    writeFileSync(join(dir, '.linx-device.json'), '{"token":"secret"}');
+    writeFileSync(join(dir, 'humanity.mjs'), 'keep');
+    assert.deepEqual(walkRepoFiles(dir), [join(dir, 'humanity.mjs')]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

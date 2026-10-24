@@ -125,36 +125,44 @@ function canonTime(hour, minute) {
   return `${hour}:${String(minute).padStart(2, '0')}`;
 }
 
-// 点后面的小数若紧跟量词、数级或「刻」，是数量不是时刻。
+// 只挡「点后一个中文数字、按整十计」这一支。X点半、H:MM、两位分钟、带「分」、零X 都不看量词。
 const TRAILING_MEASURES = [
   '公里', '千米', '厘米', '毫米', '公斤', '千克', '毫升', '小时',
   '倍', '米', '元', '块', '万', '亿', '千', '百', '斤', '两', '克', '吨', '升', '度',
   '个', '只', '条', '次', '遍', '层', '岁', '成', '折', '刻',
 ];
 
-function finishTime(text, end, rendered) {
-  if (!rendered) return null;
-  if (TRAILING_MEASURES.some(unit => text.startsWith(unit, end))) return null;
-  return { text: rendered, end };
+function followsMeasure(text, index) {
+  return TRAILING_MEASURES.some(unit => text.startsWith(unit, index));
 }
 
 // 只归整「带分钟」的时刻，避免把「有一点」收成钟点。7:30、七点半、七点三十、七点三十分视为同一个词。
 // 「七点三」这种点后单个中文数字收成整十；「七点零三」和「十二点五分」仍是精确分钟。
-// 后面是量词或「刻」则保持原样，所以「三点五倍」「一点五公里」「七点三刻」不是钟点。
+// 整十这支后面是量词或「刻」则保持原样，所以「三点五倍」「一点五公里」「七点三刻」不是钟点。
 // 前一位已经是数字时不再起一个时刻，避免「99点半」从第二位收成「9:30」。
 function parseTimeAt(text, index) {
   if (text[index - 1] === '第' || isDigit(text[index - 1])) return null;
   const clock = /^(\d{1,2}):(\d{2})/.exec(text.slice(index));
-  if (clock) return finishTime(text, index + clock[0].length, canonTime(Number(clock[1]), Number(clock[2])));
+  if (clock) {
+    const rendered = canonTime(Number(clock[1]), Number(clock[2]));
+    if (!rendered) return null;
+    return { text: rendered, end: index + clock[0].length };
+  }
   const hour = parseClockNumber(text, index);
   if (!hour || text[hour.end] !== '点') return null;
   const mark = hour.end + 1;
-  if (text[mark] === '半') return finishTime(text, mark + 1, canonTime(hour.value, 30));
+  if (text[mark] === '半') {
+    const rendered = canonTime(hour.value, 30);
+    if (!rendered) return null;
+    return { text: rendered, end: mark + 1 };
+  }
   // 「零三」是精确分钟；单独一个中文数字且后面不是「分」时按十分钟计，「七点三」是 7:30。
   if ((text[mark] === '零' || text[mark] === '〇') && CN_DIGIT[text[mark + 1]] != null) {
     let end = mark + 2;
     if (text[end] === '分') end += 1;
-    return finishTime(text, end, canonTime(hour.value, CN_DIGIT[text[mark + 1]]));
+    const rendered = canonTime(hour.value, CN_DIGIT[text[mark + 1]]);
+    if (!rendered) return null;
+    return { text: rendered, end };
   }
   const minute = parseClockNumber(text, mark);
   if (!minute) return null;
@@ -164,11 +172,15 @@ function parseTimeAt(text, index) {
   const minuteValue = colloquial ? minute.value * 10 : minute.value;
   let end = minute.end;
   if (exact) end += 1;
-  return finishTime(text, end, canonTime(hour.value, minuteValue));
+  if (colloquial && followsMeasure(text, end)) return null;
+  const rendered = canonTime(hour.value, minuteValue);
+  if (!rendered) return null;
+  return { text: rendered, end };
 }
 
 // 关键词和特征匹配前先归一化：全角转半角，时刻收成 H:MM，单独的「两 / 二」收成 2。
-// 「十二」「二十」「第二」不动，避免把位数和序数拆开。量词或「刻」后面的小数不收成时刻。
+// 「十二」「二十」「第二」不动。紧跟在已收成的时刻后面的「两 / 二」也不收，避免「七点半两个人」变成「7:302个人」。
+// 量词或「刻」只挡住点后单个中文数字的整十读法。
 export function normalizeForMatch(text) {
   const source = foldWidth(text);
   let out = '';
@@ -183,7 +195,8 @@ export function normalizeForMatch(text) {
     const isolatedTwo = (char === '两' || char === '二')
       && source[index - 1] !== '第'
       && source[index - 1] !== '十'
-      && source[index + 1] !== '十';
+      && source[index + 1] !== '十'
+      && !/\d:\d\d$/.test(out);
     out += isolatedTwo ? '2' : char;
     index += 1;
   }
