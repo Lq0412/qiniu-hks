@@ -10,7 +10,7 @@ const FILLERS = ['那个', '就是', '呃', '嗯'];
 // before / after 是命中后要排除的相邻字，避免「他妈妈」吃掉「他妈」、「人类学家」吃掉「我是人类」。
 const LIFE = [
   { phrase: '我昨天' },
-  { phrase: '我妈', after: '的' },
+  { phrase: '我妈' },
   { phrase: '我同事' },
   { phrase: '我家' },
   { phrase: '下班' },
@@ -239,8 +239,28 @@ export function countFillers(text) {
   return count;
 }
 
+const HOUSEHOLD_KIN = ['奶奶', '爷爷', '姥姥', '姥爷', '妈妈', '爸爸', '老公', '老婆', '儿子', '女儿', '孩子', '宝宝', '宠物', '猫', '狗', '妈', '爸', '哥', '姐', '弟', '妹'];
+const HOUSEHOLD_WHEN = ['昨天', '今天', '明天', '昨晚', '早上', '晚上', '刚才', '刚刚'];
+
+function hasHouseholdLife(text) {
+  const source = String(text ?? '');
+  for (let index = 0; index < source.length; index += 1) {
+    const prefixLength = source.startsWith('我家', index) ? 2 : source.startsWith('我', index) ? 1 : 0;
+    if (!prefixLength) continue;
+    const kin = HOUSEHOLD_KIN.find(item => source.startsWith(item, index + prefixLength));
+    if (!kin) continue;
+    const rest = source.slice(index + prefixLength + kin.length);
+    if (rest.startsWith('的') && rest.length > 1) return true;
+    if (HOUSEHOLD_WHEN.some(word => rest.startsWith(word))) return true;
+    if (rest.startsWith('把')) return true;
+  }
+  return false;
+}
+
 function hasLife(text) {
-  return hasMarked(text, LIFE);
+  const marked = hasMarked(text, LIFE);
+  const household = hasHouseholdLife(text);
+  return marked || household;
 }
 
 function hasEmotion(text) {

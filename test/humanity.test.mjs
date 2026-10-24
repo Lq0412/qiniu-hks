@@ -106,8 +106,9 @@ test('chinese neighbors do not turn innocent sentences into swears or identity l
   }
   const phone = feature('我妈的手机坏了');
   assert.equal(has(phone, 'break'), false);
-  assert.equal(has(phone, 'life'), false);
-  assert.equal(phone.delta, 0);
+  assert.equal(has(phone, 'life'), true);
+  assert.equal(phone.features.filter(item => item.id === 'life').length, 1);
+  assert.equal(phone.delta, 2);
   const scholar = feature('我是人类学家');
   assert.equal(has(scholar, 'break'), false);
   assert.equal(scholar.delta, 0);
@@ -126,11 +127,41 @@ test('chinese neighbors do not turn innocent sentences into swears or identity l
   assert.equal(has(laughOnly, 'filler'), false);
 });
 
+test('household life shares one cap and does not mark other people or swears', () => {
+  for (const text of ['我妈的手机', '我爸昨天', '我家猫把杯子打了', '我奶奶的钥匙', '我爸的车', '我妈的手机坏了，我改用备用机回复。']) {
+    const scored = feature(text);
+    assert.equal(has(scored, 'life'), true, text);
+    assert.equal(scored.features.filter(item => item.id === 'life').length, 1, text);
+    assert.equal(scored.features.find(item => item.id === 'life').delta, 2, text);
+  }
+  const stacked = feature('我昨天看见我爸的车');
+  assert.equal(stacked.features.filter(item => item.id === 'life').length, 1);
+  assert.equal(stacked.delta, 2);
+  const both = feature('我爸昨天我家猫把杯子打了');
+  assert.equal(both.features.filter(item => item.id === 'life').length, 1);
+  assert.equal(both.delta, 2);
+  const mood = feature('我昨天我妈的手机好烦');
+  assert.equal(mood.features.filter(item => item.id === 'life').length, 1);
+  assert.equal(has(mood, 'emotion'), true);
+  assert.equal(mood.delta, 3);
+
+  assert.equal(has(feature('其他妈妈'), 'life'), false);
+  assert.equal(feature('其他妈妈').delta, 0);
+  assert.equal(has(feature('他妈妈来了'), 'life'), false);
+  assert.equal(feature('他妈妈来了').delta, 0);
+  assert.equal(has(feature('我爸'), 'life'), false);
+  assert.equal(has(feature('我爸来了'), 'life'), false);
+  assert.equal(feature('我爸来了').delta, 0);
+  assert.equal(has(feature('说到我爸的'), 'life'), false);
+  assert.equal(containsSwear('我妈的手机'), false);
+  assert.equal(has(feature('我妈的手机'), 'break'), false);
+  assert.equal(containsSwear('他妈的'), true);
+});
+
 test('ordinary Chinese sentences stay at zero', () => {
   const samples = [
     '其他妈妈都这么说，我也是这么听的。',
     '他妈妈来了，会议先暂停一下。',
-    '我妈的手机坏了，我改用备用机回复。',
     '我是人类学家，这篇只讨论田野方法。',
     '我是真人秀的观众，不参加录制。',
     '我就是人才市场门口路过，没有投简历。',
