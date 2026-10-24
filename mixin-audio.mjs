@@ -3,6 +3,9 @@
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { buildMixinDetect } from './mixin-link.mjs';
+import { scriptedBody, scriptedDetect } from './mixin-prompts.mjs';
 import OpusScript from 'opusscript';
 
 const SAMPLE_RATE = 16000;
@@ -129,12 +132,19 @@ export function pcmFromAudioFile(bytes, filename) {
   throw new Error('不认识的音频文件');
 }
 
+export function ttsKey(text, voiceId) {
+  const detect = buildMixinDetect({ text: scriptedDetect('群主·零号', text, '预合成。'), voiceId });
+  const speak = scriptedBody(detect.text);
+  return createHash('sha256').update(JSON.stringify([speak, detect.agent_params.voice.id])).digest('hex').slice(0, 16);
+}
+
 export function ttsManifestEntry(item, voiceId) {
   return {
     id: item.id,
     roleId: item.roleId,
     voiceId,
     text: item.text,
+    ttsHash: ttsKey(item.text, voiceId),
     file: `${item.id}.mxop`,
     kind: 'tts',
   };
@@ -145,7 +155,8 @@ export function sfxManifestEntry() {
 }
 
 export function matchAsset(manifest, { voiceId, text }) {
-  return (manifest?.lines ?? []).find(line => line.kind !== 'sfx' && line.text === text && line.voiceId === voiceId && line.file) ?? null;
+  const ttsHash = ttsKey(text, voiceId);
+  return (manifest?.lines ?? []).find(line => line.kind !== 'sfx' && line.text === text && line.voiceId === voiceId && line.ttsHash === ttsHash && line.file) ?? null;
 }
 
 export function createFileAssets(dir, manifest, read = readFile) {

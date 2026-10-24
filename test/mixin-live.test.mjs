@@ -5,7 +5,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
-import { wavFromPcm } from '../mixin-audio.mjs';
+import { ttsKey, wavFromPcm } from '../mixin-audio.mjs';
 import { createAudioLane } from '../mixin-lane.mjs';
 import { createMixinLink } from '../mixin-link.mjs';
 import { createVoiceSession } from '../mixin-live.mjs';
@@ -607,7 +607,7 @@ for (const missing of [false, true]) {
         line: '第1题：测试题。请Claude先来。', fallbackText: '第1题：测试题。请Claude先来。',
         instruction: '【台词】第1题：测试题。请Claude先来。' });
       const lines = ['第1题：测试题。', '请Claude先来。'].slice(0, missing ? 1 : 2).map((text, i) => ({
-        id: `part-${i}`, text, voiceId: cue.voice.voiceId, file: `part-${i}.wav`, kind: 'tts',
+        id: `part-${i}`, text, ttsHash: ttsKey(text, cue.voice.voiceId), voiceId: cue.voice.voiceId, file: `part-${i}.wav`, kind: 'tts',
       }));
       for (const item of lines) await writeFile(path.join(dir, item.file), wavFromPcm(Buffer.alloc(640, 3)));
       await writeFile(path.join(dir, 'manifest.json'), JSON.stringify({ lines }));
