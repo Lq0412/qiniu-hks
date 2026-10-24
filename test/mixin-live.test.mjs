@@ -418,6 +418,10 @@ test('voice detect sanitizes GPT lists while display and transcript retain emoji
     await f.session.step();
     assert.equal(f.fake.detects[1].text, scriptedDetect('GPT', '第一、核对证据第二、给出结论'));
     assert.equal(cue.line, original);
+    const row = f.session.view().dialogue.at(-1);
+    assert.equal(row.text, original);
+    assert.equal(row.spokenText, sanitizeForTts(original));
+    assert.equal(f.session.game.lines.at(-1).spokenText, row.spokenText);
     assert.ok(JSON.stringify(f.session.view()).includes(original));
     assert.ok(f.session.game.lines.some(line => line.text === original));
     assert.ok(events.some(event => event.type === 'stt' && event.echo));
@@ -521,7 +525,7 @@ test('tick 改变 cue 后取消预取，新 cue 不会复用旧音频', async ()
     assert.notEqual(cue.cueId, oldCue.cueId);
     assert.ok(f.fake.aborts >= 1);
     const result = await f.session.step();
-    assert.equal(f.fake.detects[3].text, cue.instruction);
+    assert.equal(f.fake.detects[3].text, sanitizeForTts(cue.instruction));
     assert.equal(f.fake.detects[3].agent_params.voice.id, cue.voice.voiceId);
     assert.deepEqual(result.clipWav.subarray(44), Buffer.alloc(640, 7));
   } finally { f.session.tick(1_000_000); f.link.close(); }
@@ -604,16 +608,16 @@ for (const missing of [false, true]) {
     try {
       const cue = f.session.game.cue;
       Object.assign(cue, { kind: 'host_card', card: '测试题。', nextName: 'Claude',
-        line: '第1题：测试题。请Claude先来。', fallbackText: '第1题：测试题。请Claude先来。',
-        instruction: '【台词】第1题：测试题。请Claude先来。' });
-      const lines = ['第1题：测试题。', '请Claude先来。'].slice(0, missing ? 1 : 2).map((text, i) => ({
+        line: '第一题：测试题。请Claude先来。', fallbackText: '第一题：测试题。请Claude先来。',
+        instruction: '【台词】第一题：测试题。请Claude先来。' });
+      const lines = ['第一题：测试题。', '请Claude先来。'].slice(0, missing ? 1 : 2).map((text, i) => ({
         id: `part-${i}`, text, ttsHash: ttsKey(text, cue.voice.voiceId), voiceId: cue.voice.voiceId, file: `part-${i}.wav`, kind: 'tts',
       }));
       for (const item of lines) await writeFile(path.join(dir, item.file), wavFromPcm(Buffer.alloc(640, 3)));
       await writeFile(path.join(dir, 'manifest.json'), JSON.stringify({ lines }));
       const count = f.fake.detects.length;
       const result = await f.session.step();
-      if (missing) assert.equal(f.fake.detects[count].text, cue.instruction);
+      if (missing) assert.equal(f.fake.detects[count].text, sanitizeForTts(cue.instruction));
       else {
         assert.ok(!f.fake.detects.slice(count).some(item => item.text === cue.instruction));
         assert.deepEqual(result.clipWav.subarray(44), Buffer.concat([Buffer.alloc(640, 3), Buffer.alloc(4800), Buffer.alloc(640, 3)]));

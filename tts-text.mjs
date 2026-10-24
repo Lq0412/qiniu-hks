@@ -1,15 +1,21 @@
 // 只用于语音输入和回声归一化；显示文案保留原文。
-function ordinal(number) {
+export function chineseNumber(number) {
   const digits = '零一二三四五六七八九';
   const tens = Math.floor(number / 10);
   const rest = number % 10;
   const chinese = number < 10 ? digits[number]
     : `${tens === 1 ? '' : digits[tens]}十${rest ? digits[rest] : ''}`;
-  return `第${chinese}、`;
+  return chinese;
+}
+
+function ordinal(number) {
+  return `第${chineseNumber(number)}、`;
 }
 
 export function sanitizeForTts(text) {
   return text
+    .replace(/Claude|Cursor|DeepSeek/gi, name => ({ claude: '克劳德', cursor: '科瑟', deepseek: '深度求索' })[name.toLowerCase()])
+    .replace(/(?<![\d.])([1-9]\d?)号/g, (_, number) => `${chineseNumber(Number(number))}号`)
     .replace(/[0-9]\uFE0F?\u20E3|🔟|[\u2460-\u2473\u24EA\u24F5-\u24FE\u2776-\u277F\u2780-\u2789\u278A-\u2793\u3251-\u325F\u32B1-\u32BF]/gu, marker => {
       const code = marker.codePointAt(0);
       if (code >= 48 && code <= 57) return ordinal(code - 48);

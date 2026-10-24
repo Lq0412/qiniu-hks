@@ -2,7 +2,7 @@
 // 本模块不打开灵矽、不申请麦克风。文字模式把 hello 视为已满足；真连接以后只读 phase 和 generation。
 
 import { randomUUID } from 'node:crypto';
-import { sanitizeForTts } from './tts-text.mjs';
+import { chineseNumber, sanitizeForTts } from './tts-text.mjs';
 import { cardById, drawCards, replyFor, sceneById, SCENES } from './mixin-bank.mjs';
 import { ENDING_FALLBACK, renderEnding } from './mixin-endings.mjs';
 import { accusationLine, HOST_NUDGE, HOST_RULES, HOST_SKIP_PLAYER, HOST_WRAP_EARLY, HOST_WRAP_LATE, openingLine, renderBrief, stageDirection, toneFor } from './mixin-prompts.mjs';
@@ -452,7 +452,7 @@ export function viewMixin(game) {
     outcome: showSecret ? game.judged?.outcome ?? null : null,
     report: showSecret ? game.report : null,
     script: showSecret || game.debug ? game.script.map(item => ({ seat: item.seat, target: item.target, quote: item.quote, done: !!item.done, aborted: !!item.aborted })) : [],
-    dialogue: game.dialogue.slice(-80).map(line => ({ seat: line.seat, name: line.name, text: line.text, kind: line.kind, round: line.round })),
+    dialogue: game.dialogue.slice(-80).map(line => ({ seat: line.seat, name: line.name, text: line.text, spokenText: line.spokenText ?? null, kind: line.kind, round: line.round })),
     trace: game.trace.map(item => ({ phase: item.phase, at: item.at })),
     brief: renderBrief(briefState(game)),
   };
@@ -463,6 +463,7 @@ function publicCue(cue, game) {
   const instruction = cue.kind === 'vote' && !secret
     ? `【舞台指令】你是${cue.seat}号${cue.name}。请用不超过20字宣布你的投票。`
     : cue.instruction;
+  const text = cue.kind === 'vote' && !secret ? null : cue.line || null;
   return {
     cueId: cue.cueId,
     kind: cue.kind,
@@ -471,6 +472,8 @@ function publicCue(cue, game) {
     name: cue.name,
     voice: { ...cue.voice },
     instruction,
+    text,
+    spokenText: text === null ? null : sanitizeForTts(text),
     deadlineAt: cue.deadlineAt,
   };
 }
@@ -636,8 +639,8 @@ function beginRoundAi(game, now) {
   const cues = [cueFields(game, {
     kind: 'host_card', seat: 0, roleId: 'host', timeoutMs: TIMEOUTS.hostCue, maxChars: 90,
     card: card.prompt, nextName: first.name,
-    line: `第${game.round}题：${card.prompt}请${first.name}先来。`.slice(0, 90),
-    fallbackText: `第${game.round}题：${card.prompt}请${first.name}先来。`.slice(0, 90),
+    line: `第${chineseNumber(game.round)}题：${card.prompt}请${first.name}先来。`.slice(0, 90),
+    fallbackText: `第${chineseNumber(game.round)}题：${card.prompt}请${first.name}先来。`.slice(0, 90),
   })];
   for (const seatNo of order) {
     const seat = game.seats.find(item => item.seat === seatNo);
@@ -734,7 +737,8 @@ function announce(game, now) {
   const deadline = game.deadlineAt ?? now + TIMEOUTS.vote;
   ensurePlan(game);
   const cues = game.votePlan.votes.map(vote => {
-    const line = vote.targetSeat === null ? '证据不足，我弃权。' : Array.from(graphemes.segment(`我投${vote.targetSeat}号，${roleById(vote.roleId).catchphrases[0]}。`), part => part.segment).slice(0, 20).join('');
+    const catchphrase = roleById(vote.roleId).catchphrases[0].replace('1️⃣2️⃣3️⃣ ', '');
+    const line = vote.targetSeat === null ? '证据不足，我弃权。' : Array.from(graphemes.segment(`我投${vote.targetSeat}号，${catchphrase}。`), part => part.segment).slice(0, 20).join('');
     return cueFields(game, {
       kind: 'vote', seat: vote.seat, roleId: vote.roleId,
       voice: game.seats.find(seat => seat.seat === vote.seat).voice,
@@ -828,7 +832,7 @@ function recordCue(game, cue, text, now, via, voiceUsed) {
   const spoken = cue.kind === 'vote'
     ? Array.from(graphemes.segment(source), part => part.segment).slice(0, cue.maxChars).join('')
     : source.slice(0, cue.maxChars);
-  const row = { seat: cue.seat, roleId: cue.roleId, name: cue.name, text: spoken, round: game.round, phase: game.phase, at: now, kind: cue.kind, voiceUsed: voiceUsed ?? null, via };
+  const row = { seat: cue.seat, roleId: cue.roleId, name: cue.name, text: spoken, spokenText: sanitizeForTts(spoken), round: game.round, phase: game.phase, at: now, kind: cue.kind, voiceUsed: voiceUsed ?? null, via };
   game.lines.push(row);
   game.dialogue.push(row);
   remember(game, spoken);

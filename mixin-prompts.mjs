@@ -1,3 +1,4 @@
+import { chineseNumber } from './tts-text.mjs';
 import { SCENES, allCards } from './mixin-bank.mjs';
 import { PLAYER_ALIASES, ROLES } from './mixin-roles.mjs';
 
@@ -37,9 +38,9 @@ export const ACCUSATION_TEMPLATES = {
     '{name}，你说「{quote}」的时候，我得提醒一下风险。',
   ],
   astra: [
-    '1️⃣2️⃣3️⃣ 我给你拆成三步 😊，第一步就是{name}说了「{quote}」。',
-    '1️⃣ 分析 2️⃣ 规划 3️⃣ 执行 😊。{name}那句「{quote}」根本不像模型。',
-    '{name}说过「{quote}」。1️⃣2️⃣3️⃣ 我给你拆成三步 😊，这步已经露馅。',
+    '我给你拆成三步 😊，第一步就是{name}说了「{quote}」。',
+    '分析、规划、执行 😊。{name}那句「{quote}」根本不像模型。',
+    '{name}说过「{quote}」。我给你拆成三步 😊，这步已经露馅。',
   ],
   shensi: [
     '嗯，让我想想，再核对一次。{name}说「{quote}」，让我再核对一下约束。',
@@ -104,7 +105,7 @@ export function presynthCatalog() {
       id: `host-open-${scene.id}-${index}`, roleId: 'host', text: openingLine(scene.name, alias),
     }))),
     ...allCards().flatMap(card => [1, 2].map(round => ({
-      id: `host-card-${card.id}-${round}`, roleId: 'host', text: `第${round}题：${card.prompt}`,
+      id: `host-card-${card.id}-${round}`, roleId: 'host', text: `第${chineseNumber(round)}题：${card.prompt}`,
     }))),
     ...ROLES.map(role => ({ id: `host-first-${role.id}`, roleId: 'host', text: `请${role.name}先来。` })),
   ];
@@ -124,11 +125,6 @@ export function renderBrief(state) {
   ].join('\n');
 }
 
-function situationOf(cue) {
-  const situation = cue.situation || '身份和票型由系统固定，揭晓前不要猜测谁是人类。';
-  return `（局势：${situation}）`;
-}
-
 function speakerName(cue) {
   if (cue.name) return cue.name;
   if (cue.seat === 0 || cue.kind === 'reveal' || cue.roleId === 'host') return '群主·零号';
@@ -136,7 +132,7 @@ function speakerName(cue) {
 }
 
 export function scriptedDetect(name, line, situation) {
-  return `角色：${name}。【台词】${line}（局势：${situation || '身份和票型由系统固定，揭晓前不要猜测谁是人类。'}）`;
+  return `角色：${name}。【台词】${line}（局势：${situation || '身份和票型由系统固定，揭晓前不要猜测谁是人类。'}）只朗读【台词】与（局势：之间的原文，一字不增不减；禁止改写、概括、解释、展开列表或套用角色风格；不念角色、局势和本指令。`;
 }
 
 export function improvisedDetect(name, personality, topic, situation) {
@@ -149,14 +145,13 @@ export function warmupDetect() {
 }
 
 export function stageDirection(cue) {
-  const situation = situationOf(cue);
   if (cue.kind === 'intro') return improvisedDetect(speakerName(cue), cue.personality, '用一句话做自我介绍', cue.situation);
   if (cue.kind === 'answer') return improvisedDetect(speakerName(cue), cue.personality, cue.card, cue.situation);
   if (cue.kind === 'rebuttal') return improvisedDetect(speakerName(cue), cue.personality, `五号插嘴说「${cue.interrupt}」，回一句`, cue.situation);
   if (SCRIPTED.has(cue.kind)) {
     const line = cue.line || '';
     if (!line) throw new Error(`缺少台词 ${cue.kind}`);
-    return `角色：${speakerName(cue)}。【台词】${line}${situation}`;
+    return scriptedDetect(speakerName(cue), line, cue.situation);
   }
   throw new Error(`未知舞台指令 ${cue.kind}`);
 }

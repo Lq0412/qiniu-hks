@@ -110,7 +110,7 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
       let pcm = await assets.find({ voiceId, text: line });
       // 只拆完整出题句；被 90 字截断的台词保持实时合成。
       if (!pcm?.length && cue?.kind === 'host_card') {
-        const parts = /^(第[12]题：.*)(请.+先来。)$/.exec(line);
+        const parts = /^(第[一二]题：.*)(请.+先来。)$/.exec(line);
         if (parts && line === `${parts[1]}请${cue.nextName}先来。` && parts[1].endsWith(cue.card)) {
           const first = await assets.find({ voiceId, text: parts[1] });
           const next = await assets.find({ voiceId, text: parts[2] });
