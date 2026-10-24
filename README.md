@@ -31,6 +31,23 @@ Node.js 24，执行 `npm ci`、`npm start`，打开 http://127.0.0.1:4173/ 。�
 3. 揭晓后可以下载分享卡，或再来一局。刷新页面会按本机 cookie 回到当前进度。
 4. 「按住说话」只占位，文字模式不会录音。
 
+### 本地玩语音版需要准备什么
+
+- Node.js 24。
+- 设备 JSON：`LINX_DEVICE_JSON` 可以是 JSON 正文，也可以是文件路径。同一份内容也可以放在仓库根目录、已被 git 忽略的 `.linx-device.json`。
+- API key：`LINX_API_KEY`。
+- 浏览器麦克风权限，以及允许这个页面播放声音。这一局不上传「按住说话」的录音。玩家在输入框打字，然后点确认。
+
+第一次启动会在后台自动预合成群主的固定台词，大约 90 秒，不挡住开局。文件还没好时，群主的话用实时语音。揭晓时浏览器先合成短音，再播「投票结束，揭晓时间。」和结局口播。生成的文件在 `public/mixin/audio/`，已在 `.gitignore` 里，不要提交。没有凭据时同一条命令自动退回文字局，不连接灵矽。`npm start` 始终是文字局，不预合成。
+
+```bash
+export LINX_DEVICE_JSON='{"deviceId":"<设备号>","clientId":"<客户端号>"}'
+export LINX_API_KEY='<API key>'
+npm run play:voice
+```
+
+打开命令打印出来的地址，默认是 http://127.0.0.1:4173/mixin 。`PORT` 可以改端口。也可以同时设置 `LINX_WS_URL`、`LINX_WS_TOKEN`、`LINX_DEVICE_ID`、`LINX_CLIENT_ID` 跳过 OTA。浏览器怎么播、怎么停，见 [架构草案](docs/architecture.md) 的「浏览器音频协议」。
+
 服务端和接口见 [架构草案](docs/architecture.md)。旧版试玩入口仍是 http://127.0.0.1:4173/ 。离线把一局跑完可以用 `npm run sim`。
 
 ## 文档
