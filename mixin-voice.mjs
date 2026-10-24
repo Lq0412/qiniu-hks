@@ -32,7 +32,7 @@ export async function dispatchSeatSpeech(implement, input) {
       seat: request.seat,
       text: text || request.fallbackText,
       voiceUsed: result?.voiceUsed ?? null,
-      mode: result?.mode ?? (text ? 'text' : 'fallback'),
+      mode: text ? (result?.mode ?? 'text') : 'fallback',
       voice: request.voice,
     };
   } catch (error) {
