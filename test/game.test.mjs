@@ -1,51 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createGame, addSpeech, review, advance, view, checkTime } from '../game.mjs';
-import { mcpReply } from '../linx.mjs';
-
-test('three counters require two meaningful reviews each, all stamps win', () => {
-  const g = createGame();
-  assert.equal(addSpeech(g, ''), false);
-  for (let stage = 0; stage < 3; stage++) {
-    addSpeech(g, '具体的合理建议'); review(g, stage, {turn:1,delta:25,reason:'有可核对的依据'});
-    assert.equal(view(g).stamped, false);
-    addSpeech(g, '进一步的可执行办法'); review(g, stage, {turn:2,delta:25,reason:'明确解决顾虑'});
-    assert.equal(view(g).stamped, true);
-    if (stage < 2) { advance(g); assert.equal(g.score,30); }
-  }
-  assert.equal(g.status,'won'); assert.equal(addSpeech(g,'更多话'),false); assert.throws(()=>advance(g));
+import {createGame,addSpeech,evaluate,advance,saveReport,view} from '../game.mjs';
+import {mcpReply} from '../linx.mjs';
+import {dimensions} from '../benchmark.mjs';
+function answer(g){addSpeech(g,'我会先确认实际信息，再安排后续事情。');evaluate(g,g.stage,{question:g.stage+1,revision:g.pending.revision,quote:'确认实际信息',feedback:'先查再说，有点东西。'});}
+function completed(){const g=createGame();for(let i=0;i<6;i++){answer(g);advance(g,g.pending.revision);}return g;}
+function report(){return {model:'DeepSeek',tier:'夯爆了',headline:'脑子在线',summary:'先确认再行动。',roast:'脑补服务今天暂停营业。',advice:'继续保持。',dimensions:dimensions.map(name=>({name,verdict:'在线',comment:'保留了信息边界。',question:1,quote:'确认实际信息'}))};}
+test('confirmed answers, revisions and final evidence are authoritative',()=>{
+ const g=createGame();assert.equal(addSpeech(g,''),false);assert.equal(addSpeech(g,null),false);assert.throws(()=>advance(g,0));answer(g);const old=g.pending.revision;addSpeech(g,'重答：我会确认实际信息。');assert.throws(()=>advance(g,old));assert.throws(()=>evaluate(g,0,{question:1,revision:old,quote:'确认',feedback:'好'}));
+ evaluate(g,0,{question:1,revision:g.pending.revision,quote:'确认',feedback:'好'});advance(g,g.pending.revision);assert.equal(g.answers[0].text,'重答：我会确认实际信息。');const v=view(g);v.answers[0].text='篡改';assert.notEqual(v.answers[0].text,g.answers[0].text);
+ const done=completed();assert.equal(done.status,'reporting');assert.equal(addSpeech(done,'多余输入'),false);assert.throws(()=>advance(done,6));saveReport(done,6,JSON.stringify(report()));assert.equal(done.status,'done');assert.throws(()=>saveReport(done,6,JSON.stringify(report())));
 });
-
-test('reject invalid, stale, repeated and out-of-range evaluations', () => {
-  const g = createGame(); assert.throws(()=>advance(g));
-  assert.throws(()=>review(g,0,{turn:0,delta:25,reason:'bad'}));
-  addSpeech(g,'你好');
-  for (const args of [{turn:1,delta:100,reason:'bad'},{turn:1,delta:1.2,reason:'bad'},{turn:1,delta:25,reason:''},{turn:1,delta:25,reason:3}]) assert.throws(()=>review(g,0,args));
-  assert.throws(()=>review(g,1,{turn:1,delta:25,reason:'旧窗'}));
-  review(g,0,{turn:1,delta:25,reason:'有效'});
-  assert.equal(review(g,0,{turn:1,delta:25,reason:'重试'}).duplicate,true); assert.equal(g.score,55);
-  assert.throws(()=>review(g,0,{turn:2,delta:25,reason:'未来轮'}));
-  addSpeech(g,'说明');review(g,0,{turn:2,delta:25,reason:'有效'});
-  assert.equal(addSpeech(g,'已盖章'),false);
-  addSpeech(g,'');
-  g.turn=3;assert.throws(()=>review(g,0,{turn:3,delta:25,reason:'已盖章'}));
-});
-
-test('zero score, deadline, restart and detached views', () => {
-  const g=createGame();for(let i=0;i<3;i++){addSpeech(g,'辱骂');review(g,0,{turn:g.turn,delta:-10,reason:'辱骂'});}assert.equal(g.status,'rejected');assert.throws(()=>review(g,0,{turn:3,delta:25,reason:'无效'}));
-  const timed=createGame();checkTime(timed);addSpeech(timed,'开始',Date.now()-180001);checkTime(timed);assert.equal(view(timed).status,'timeout');
-  const fresh=createGame();assert.notEqual(fresh.id,g.id);assert.equal(view(fresh).secondsLeft,180);
-  const copy=view(fresh);copy.counter.name='changed';assert.notEqual(view(fresh).counter.name,'changed');
-});
-
-test('MCP initialize, discovery, status, review and errors', () => {
-  const g=createGame();
-  assert.equal(mcpReply({id:1,method:'initialize'},g,0).result.protocolVersion,'2024-11-05');
-  assert.equal(mcpReply({id:2,method:'tools/list'},g,0).result.tools.length,2);
-  assert.equal(mcpReply({id:3,method:'tools/call',params:{name:'self.game.status'}},g,0).result.isError,false);
-  assert.equal(mcpReply({id:4,method:'tools/call',params:{name:'self.game.review'}},g,0).result.isError,true);
-  addSpeech(g,'具体建议');
-  assert.equal(mcpReply({id:5,method:'tools/call',params:{name:'self.game.review',arguments:{turn:1,delta:25,reason:'具体'}}},g,0).result.isError,false);
-  assert.equal(mcpReply({id:6,method:'tools/call'},g,0).error.code,-32601);
-  assert.equal(mcpReply({id:7,method:'bad'},g,0).error.code,-32601);
+test('invalid tool calls and fabricated report evidence are rejected',()=>{
+ const g=createGame();assert.throws(()=>saveReport(g,0,'{}'));addSpeech(g,'确认实际信息');
+ for(const args of [{quote:'假的',feedback:'好'},{quote:'确',feedback:'好'},{quote:null,feedback:'好'},{quote:'确认',feedback:''},{quote:'确认',feedback:null},{quote:'确认',feedback:'太'.repeat(101)}])assert.throws(()=>evaluate(g,0,{question:1,revision:1,...args}));
+ assert.equal(mcpReply({id:1,method:'initialize'},g,0).result.serverInfo.name,'human-benchmark');assert.equal(mcpReply({id:2,method:'tools/list'},g,0).result.tools.length,3);
+ assert.equal(mcpReply({id:3,method:'tools/call',params:{name:'self.test.status'}},g,0).result.isError,false);
+ assert.equal(mcpReply({id:4,method:'tools/call',params:{name:'self.test.evaluate'}},g,0).result.isError,true);
+ assert.ok(mcpReply({id:5,method:'unknown'},g,0).error);assert.ok(mcpReply({id:6,method:'tools/call',params:{name:'unknown'}},g,0).error);
+ const done=completed();for(const raw of [null,'x','x'.repeat(12001),'null'])assert.throws(()=>saveReport(done,6,raw));
+ const mutations=[r=>r.model='未知',r=>r.tier='神',r=>r.headline='',r=>r.summary=null,r=>r.roast='长'.repeat(301),r=>r.dimensions=null,r=>r.dimensions=[],r=>r.dimensions[0].name='速度',r=>r.dimensions[0].verdict='',r=>r.dimensions[0].verdict='长'.repeat(41),r=>r.dimensions[0].comment='',r=>r.dimensions[0].comment='长'.repeat(201),r=>r.dimensions[0].question=7,r=>r.dimensions[0].question=1.1,r=>r.dimensions[0].quote='虚构证据啊',r=>r.dimensions[0].quote='确认',r=>r.dimensions[0].quote=null];
+ for(const mutate of mutations){const r=report();mutate(r);assert.throws(()=>saveReport(done,6,JSON.stringify(r)));}
+ assert.equal(mcpReply({id:7,method:'tools/call',params:{name:'self.test.report',arguments:{report_json:JSON.stringify(report())}}},done,6).result.isError,false);
 });

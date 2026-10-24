@@ -42,12 +42,14 @@ export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice =
       if (!session) return json(409, { error: '请先开始新一局。' });
       session.updated = Date.now();
       if (path === '/api/next') {
-        const game = advance(session.game);
+        let body='';for await(const chunk of req){body+=chunk;if(body.length>4096)throw new Error('请求内容过大。');}
+        const input=JSON.parse(body||'{}');
+        const game = advance(session.game,input.revision);
         if (active && active.session === session) { const previous = active; active = null; previous.bridge?.close(); previous.client.close(); }
         session.ticket = null;
         return json(200, { game });
       }
-      if (session.game.status !== 'playing' || view(session.game).stamped) return json(409, { error: '当前窗口已结束。' });
+      if (!['playing','reporting'].includes(session.game.status)) return json(409, { error: '测评已经结束，请重新开始。' });
       const config = await loadConfig(); const result = await getOta(config);
       if (!result.websocket?.token) return json(409, { error: '测试设备尚未绑定 Linx，请先绑定。', activation: result.activation?.code });
       if (active) { const previous = active; active = null; previous.bridge?.close(); previous.client.close(); }
@@ -73,4 +75,4 @@ export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice =
   return server;
 }
 
-if (process.argv[1]?.replaceAll('\\', '/').endsWith('/server.mjs') || process.argv[1] === 'server.mjs') createApp().listen(Number(process.env.PORT ?? 4173), '127.0.0.1', () => console.log('今日不办 · http://127.0.0.1:4173'));
+if (process.argv[1]?.replaceAll('\\', '/').endsWith('/server.mjs') || process.argv[1] === 'server.mjs') createApp().listen(Number(process.env.PORT ?? 4173), '127.0.0.1', () => console.log('人类模型测评站 · http://127.0.0.1:4173'));

@@ -1,32 +1,33 @@
 import WebSocket from 'ws';
 import OpusScript from 'opusscript';
-import { brief, counters } from './counters.mjs';
-import { addSpeech, review, view } from './game.mjs';
+import { brief, questions } from './benchmark.mjs';
+import { addSpeech, evaluate, saveReport, view } from './game.mjs';
 
 export const tools = [
-  { name: 'self.game.status', description: '读取当前办事游戏的有效轮次turn、柜员规则、态度和盖章状态；每次评价前必须读取。', inputSchema: { type: 'object', properties: {}, required: [] } },
-  { name: 'self.game.review', description: '评价玩家本轮说服效果并记录理由。后端按规则控制盖章。每次玩家发言后调用一次。', inputSchema: { type: 'object', properties: { turn: { type: 'integer' }, delta: { type: 'integer', minimum: -10, maximum: 25 }, reason: { type: 'string' } }, required: ['turn', 'delta', 'reason'] } },
+  {name:'self.test.status',description:'读取当前测评题号、回答版本revision、最新转写和已确认的回答；每次评价前读取。',inputSchema:{type:'object',properties:{},required:[]}},
+  {name:'self.test.evaluate',description:'为当前回答记录一句短反馈，等待用户确认后再下一题。',inputSchema:{type:'object',properties:{question:{type:'integer'},revision:{type:'integer'},quote:{type:'string'},feedback:{type:'string'}},required:['question','revision','quote','feedback']}},
+  {name:'self.test.report',description:'六题确认后提交最终模型测评报告。report_json必须是包含型号、夯拉等级与三项带引用维度的JSON字符串，按当前提示中的结构填写。',inputSchema:{type:'object',properties:{report_json:{type:'string'}},required:['report_json']}},
 ];
 
-export function mcpReply(payload, game, stage) {
-  const reply = { jsonrpc: '2.0', id: payload.id };
-  if (payload.method === 'initialize') return { ...reply, result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'today-not-open', version: '1.0.0' } } };
-  if (payload.method === 'tools/list') return { ...reply, result: { tools } };
-  if (payload.method === 'tools/call') {
-    try {
+export function mcpReply(payload,game,stage) {
+  const reply={jsonrpc:'2.0',id:payload.id};
+  if(payload.method==='initialize')return {...reply,result:{protocolVersion:'2024-11-05',capabilities:{tools:{}},serverInfo:{name:'human-benchmark',version:'1.0.0'}}};
+  if(payload.method==='tools/list')return {...reply,result:{tools}};
+  if(payload.method==='tools/call'){
+    try{
       let result;
-      if (payload.params?.name === 'self.game.status') result = view(game);
-      else if (payload.params?.name === 'self.game.review') result = review(game, stage, payload.params.arguments ?? {});
-      else return { ...reply, error: { code: -32601, message: '未知工具' } };
-      const instruction = result.stamped ? '工具确认本窗已盖章，现在可以口头放行。' : result.status !== 'playing' ? '本局结束，说明失败原因。' : `工具确认尚未盖章，当前${result.score}分，必须达到75分。你只能继续提出一个具体顾虑，绝对不能说补发完成、准予办理、盖章、去下一窗口或其他放行话术。`;
-      return { ...reply, result: { content: [{ type: 'text', text: JSON.stringify({ ...result, clerkDirective: instruction }) }], isError: false } };
-    } catch (error) { return { ...reply, result: { content: [{ type: 'text', text: error.message }], isError: true } }; }
+      if(payload.params?.name==='self.test.status')result=view(game);
+      else if(payload.params?.name==='self.test.evaluate')result=evaluate(game,stage,payload.params.arguments??{});
+      else if(payload.params?.name==='self.test.report')result=saveReport(game,stage,payload.params.arguments?.report_json);
+      else return {...reply,error:{code:-32601,message:'未知工具'}};
+      return {...reply,result:{content:[{type:'text',text:JSON.stringify({...result,instruction:result.status==='done'?'报告已保存，只用两句话公布型号和评级。':brief(game.stage,game)})}],isError:false}};
+    }catch(error){return {...reply,result:{content:[{type:'text',text:error.message}],isError:true}};}
   }
-  return { ...reply, error: { code: -32601, message: '未知方法' } };
+  return {...reply,error:{code:-32601,message:'未知方法'}};
 }
-
 export function connectLinx({ config, credentials, game, client, onClose, createSocket = (url, options) => new WebSocket(url, options) }) {
   const stage = game.stage;
+  const openingText = game.status === 'reporting' ? '六题已全部确认，请生成最终报告。' : questions[stage].text;
   const url = new URL(credentials.url);
   // OTA currently advertises ws; this fixed platform endpoint also supports WSS.
   if (url.hostname !== 'xrobo-io.qiniuapi.com') throw new Error('Linx返回了未支持的语音地址。');
@@ -37,11 +38,16 @@ export function connectLinx({ config, credentials, game, client, onClose, create
   let closed = false;
   let decoder = null;
   let openingPending = false;
+  let toolsReady = false;
+  const pendingInputs = [];
   const emit = data => { if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(data)); };
-  const send = data => { if (upstream.readyState === WebSocket.OPEN) upstream.send(JSON.stringify({ ...data, session_id: sessionId })); };
+  const send = data => {
+    if(data.type === 'listen' && !toolsReady) { if(pendingInputs.length < 8)pendingInputs.push(data); return; }
+    if (upstream.readyState === WebSocket.OPEN) upstream.send(JSON.stringify({ ...data, session_id: sessionId }));
+  };
   const timer = setTimeout(() => { emit({ type: 'error', message: 'Linx语音握手超时，请重新连接。' }); upstream.close(); }, 20000);
   const close = () => { if (closed) return; closed = true; clearTimeout(timer); upstream.close(); decoder?.delete(); decoder = null; onClose?.(); };
-  upstream.on('open', () => send({ type: 'hello', version: 1, features: { mcp: true }, transport: 'websocket', audio_params: { format: 'pcm', sample_rate: 16000, channels: 1, bit_depth: 16, endianness: 'little', frame_duration: 20, frame_size: 320, sample_format: 'signed_int16' }, agent_params: { custom_replace_prompt: { counter_brief: brief(stage) } } }));
+  upstream.on('open', () => send({ type: 'hello', version: 1, features: { mcp: true }, transport: 'websocket', audio_params: { format: 'pcm', sample_rate: 16000, channels: 1, bit_depth: 16, endianness: 'little', frame_duration: 20, frame_size: 320, sample_format: 'signed_int16' }, agent_params: { custom_replace_prompt: { counter_brief: brief(stage, game) } } }));
   upstream.on('message', (data, binary) => {
     if (closed) return;
     if (binary) {
@@ -61,12 +67,14 @@ export function connectLinx({ config, credentials, game, client, onClose, create
     }
     if (message.type === 'mcp' && message.payload?.id !== undefined) {
       const reply = mcpReply(message.payload, game, stage);
+      if (reply.result?.isError) emit({type:'error',message:reply.result.content[0].text});
       send({ type: 'mcp', payload: reply });
+      if(message.payload.method === 'tools/list') { toolsReady = true; for(const input of pendingInputs.splice(0))send(input); }
       emit({ type: 'game', game: view(game) });
       return;
     }
     if (message.type === 'stt') {
-      if (openingPending && message.text === counters[stage].opening) { openingPending = false; return; }
+      if (openingPending && message.text === openingText) { openingPending = false; return; }
       openingPending = false;
       addSpeech(game, message.text);
     }
@@ -83,7 +91,7 @@ export function connectLinx({ config, credentials, game, client, onClose, create
       const input = JSON.parse(data.toString());
       if (input.type === 'listen' && ['start', 'stop'].includes(input.state)) send({ type: 'listen', state: input.state, mode: 'manual' });
       else if (input.type === 'abort') send({ type: 'abort', reason: 'wake_word_detected' });
-      else if (input.type === 'opening') { openingPending = true; send({ type: 'listen', state: 'detect', text: '开始办事', text_response: counters[stage].opening }); }
+      else if (input.type === 'opening') { openingPending = true; send(game.status === 'reporting' ? {type:'listen',state:'detect',text:openingText} : {type:'listen',state:'detect',text:'开始测试',text_response:openingText}); }
       else if (input.type === 'text' && typeof input.text === 'string' && input.text.trim() && input.text.length <= 500) send({ type: 'listen', state: 'detect', text: input.text.trim() });
     } catch { emit({ type: 'error', message: '消息格式不正确。' }); }
   });
