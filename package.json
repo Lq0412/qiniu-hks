@@ -1,7 +1,7 @@
 {
   "name": "human-model-benchmark",
   "version": "1.0.0",
-  "description": "今日不办 · Linx语音办事闯关",
+  "description": "谁是人类 · 一桌 AI，只有你是人，你要伪装成 AI",
   "scripts": {
     "start": "node server.mjs",
     "sim": "node scripts/sim-mixin.mjs",

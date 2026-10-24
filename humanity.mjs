@@ -7,7 +7,7 @@ import { RIVAL } from './mixin-roles.mjs';
 const PUNCT_RE = /[\s，。！？、；：,.!?;:~～…·「」『』“”"'（）()[\]【】\-—]/g;
 // 「哈哈」只算笑声，不再同时算语气词。
 const FILLERS = ['那个', '就是', '呃', '嗯'];
-// before / after 是命中后要排除的相邻字，避免「他妈妈」吃掉「他妈」、「人类学家」吃掉「我是人类」。
+// before / after 是命中后要排除的相邻字，避免「他妈妈」吃掉「他妈」、「人类学家」吃掉「我是人类」或「我就是人类」。
 const LIFE = [
   { phrase: '我昨天' },
   { phrase: '我妈' },
@@ -32,7 +32,10 @@ const SWEAR = [
 const IDENTITY = [
   { phrase: '我是人类', after: '学' },
   { phrase: '我是真人', after: '秀' },
-  { phrase: '我就是人', after: '才工员家民生道性事群口' },
+  // 「我就是人类」单独成条，后面是「学」才排除，所以「我就是人类学家」不加分。
+  // 较短的「我就是人」必须挡住「类」，否则「人类学家」仍会从这一条漏进来。
+  { phrase: '我就是人类', after: '学' },
+  { phrase: '我就是人', after: '类才工员家民生道性事群口' },
 ];
 const COMPLIANCE = ['请以实际情况为准', '请以实际为准', '无法承诺', '这只是我的看法'];
 
@@ -122,8 +125,20 @@ function canonTime(hour, minute) {
   return `${hour}:${String(minute).padStart(2, '0')}`;
 }
 
+// 只挡「点后一个中文数字、按整十计」这一支。X点半、H:MM、两位分钟、带「分」、零X 都不看量词。
+const TRAILING_MEASURES = [
+  '公里', '千米', '厘米', '毫米', '公斤', '千克', '毫升', '小时',
+  '倍', '米', '元', '块', '万', '亿', '千', '百', '斤', '两', '克', '吨', '升', '度',
+  '个', '只', '条', '次', '遍', '层', '岁', '成', '折', '刻',
+];
+
+function followsMeasure(text, index) {
+  return TRAILING_MEASURES.some(unit => text.startsWith(unit, index));
+}
+
 // 只归整「带分钟」的时刻，避免把「有一点」收成钟点。7:30、七点半、七点三十、七点三十分视为同一个词。
 // 「七点三」这种点后单个中文数字收成整十；「七点零三」和「十二点五分」仍是精确分钟。
+// 整十这支后面是量词或「刻」则保持原样，所以「三点五倍」「一点五公里」「七点三刻」不是钟点。
 // 前一位已经是数字时不再起一个时刻，避免「99点半」从第二位收成「9:30」。
 function parseTimeAt(text, index) {
   if (text[index - 1] === '第' || isDigit(text[index - 1])) return null;
@@ -157,13 +172,15 @@ function parseTimeAt(text, index) {
   const minuteValue = colloquial ? minute.value * 10 : minute.value;
   let end = minute.end;
   if (exact) end += 1;
+  if (colloquial && followsMeasure(text, end)) return null;
   const rendered = canonTime(hour.value, minuteValue);
   if (!rendered) return null;
   return { text: rendered, end };
 }
 
 // 关键词和特征匹配前先归一化：全角转半角，时刻收成 H:MM，单独的「两 / 二」收成 2。
-// 「十二」「二十」「第二」不动，避免把位数和序数拆开。
+// 「十二」「二十」「第二」不动。紧跟在已收成的时刻后面的「两 / 二」也不收，避免「七点半两个人」变成「7:302个人」。
+// 量词或「刻」只挡住点后单个中文数字的整十读法。
 export function normalizeForMatch(text) {
   const source = foldWidth(text);
   let out = '';
@@ -178,7 +195,8 @@ export function normalizeForMatch(text) {
     const isolatedTwo = (char === '两' || char === '二')
       && source[index - 1] !== '第'
       && source[index - 1] !== '十'
-      && source[index + 1] !== '十';
+      && source[index + 1] !== '十'
+      && !/\d:\d\d$/.test(out);
     out += isolatedTwo ? '2' : char;
     index += 1;
   }

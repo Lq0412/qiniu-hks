@@ -15,7 +15,7 @@ export async function deviceConfig(path = new URL('./.linx-device.json', import.
 export async function ota(config, fetcher = fetch) {
   const response = await fetcher('https://xrobo.qiniuapi.com/v1/ota/', {
     method: 'POST', signal: AbortSignal.timeout(15000),
-    headers: { 'Content-Type': 'application/json', 'Activation-Version': '1', 'Device-Id': config.deviceId, 'Client-Id': config.clientId, 'User-Agent': 'counter-game/1.0.0' },
+    headers: { 'Content-Type': 'application/json', 'Activation-Version': '1', 'Device-Id': config.deviceId, 'Client-Id': config.clientId, 'User-Agent': 'who-is-human/1.0.0' },
     body: JSON.stringify({ version: 0, uuid: config.clientId, mac_address: config.deviceId, application: { name: 'counter-game', version: '1.0.0', elf_sha256: 'counter-game-local' }, board: { type: 'xiaoling-web-test', ssid: 'local', rssi: 0, mac: config.deviceId } }),
   });
   if (!response.ok) throw new Error(`Linx OTA 返回 ${response.status}`);
