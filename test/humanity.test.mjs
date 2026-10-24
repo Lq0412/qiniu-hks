@@ -365,3 +365,13 @@ test('titles follow the outcome and the frame egg', () => {
   assert.equal(scoreHumanity([]).score, 0);
   assert.equal(scoreHumanity(null).aiScore, 100);
 });
+
+test('AI abstentions are deterministic with RNG and never target a seat', () => {
+  const plan = planVotes({ seats, score: 10, difficulty: 'normal', random: () => 0 });
+  assert.equal(plan.abstentions, 4);
+  assert.ok(plan.votes.every(vote => vote.targetSeat === null && vote.targetName === '弃权'));
+  assert.ok(Object.values(plan.tally).every(count => count === 0));
+  assert.equal(judgeOutcome({ ...plan }).caught, false);
+  assert.equal(judgeOutcome({ tally: { 5: 2, 1: 0 }, abstentions: 2 }).caught, false);
+  assert.equal(judgeOutcome({ tally: { 5: 2, 1: 2 }, abstentions: 0 }).caught, true);
+});

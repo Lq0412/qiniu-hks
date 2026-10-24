@@ -584,3 +584,12 @@ test('player countdown copy matches the actual twenty-second deadline', async ()
   assert.equal(seconds, 20);
   assert.equal(game.note, `轮到你了，${seconds} 秒。`);
 });
+
+test('explicit abstention is accepted in defense and locks on entering vote', () => {
+  const game = createMixinGame({ demo: true });
+  game.phase = 'defense';
+  const result = castVote(game, { generation: game.generation, seat: null });
+  assert.equal(result.accepted, true);
+  assert.equal(viewMixin(game).playerAbstained, true);
+  assert.equal(game.playerVote, null);
+});

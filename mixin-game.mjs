@@ -187,6 +187,7 @@ export function createMixinGame(options = {}) {
     script: [],
     defenseText: null,
     playerVote: null,
+    playerAbstained: false,
     voteLocked: false,
     announced: false,
     votePlan: null,
@@ -280,8 +281,9 @@ export function castVote(game, { generation, seat, now = 0 }) {
   assertPlayable(game);
   if (game.voteLocked) return refused(game, 'locked');
   if (game.phase !== 'defense' && game.phase !== 'vote') return refused(game, 'phase');
-  if (!game.seats.some(item => item.seat === seat)) return refused(game, 'seat');
+  if (seat !== null && !game.seats.some(item => item.seat === seat)) return refused(game, 'seat');
   game.playerVote = seat;
+  game.playerAbstained = seat === null;
   if (game.phase === 'vote' && !game.announced) announce(game, now);
   return accepted(game, 'voted');
 }
@@ -440,6 +442,7 @@ export function viewMixin(game) {
     aiScore: showSecret || game.debug ? game.human.aiScore : null,
     interrupts: game.interrupts.length,
     playerVote: game.playerVote,
+    playerAbstained: game.playerAbstained,
     voteLocked: game.voteLocked,
     votes: visibleVotes(game, showSecret || game.debug),
     outcome: showSecret ? game.judged?.outcome ?? null : null,
@@ -475,8 +478,8 @@ function visibleVotes(game, showSecret) {
   const votes = game.votePlan.votes.filter(vote => spoken.has(vote.seat));
   if (!votes.length) return null;
   const tally = {};
-  for (const vote of votes) tally[vote.targetSeat] = (tally[vote.targetSeat] ?? 0) + 1;
-  return { votes, tally };
+  for (const vote of votes) if (vote.targetSeat !== null) tally[vote.targetSeat] = (tally[vote.targetSeat] ?? 0) + 1;
+  return { votes, tally, abstentions: votes.filter(vote => vote.targetSeat === null).length };
 }
 
 function assertGen(game, generation) {
@@ -679,7 +682,7 @@ function beginDefense(game, now) {
 function beginVote(game, now) {
   game.note = '正在计票。';
   game.announced = false;
-  game.voteLocked = game.playerVote != null;
+  game.voteLocked = game.playerVote != null || game.playerAbstained;
   game.deadlineAt = now + (game.mode === 'text' ? TIMEOUTS.textVote : TIMEOUTS.vote);
   if (game.voteLocked) announce(game, now);
 }
@@ -727,7 +730,7 @@ function announce(game, now) {
   const deadline = game.deadlineAt ?? now + TIMEOUTS.vote;
   ensurePlan(game);
   const cues = game.votePlan.votes.map(vote => {
-    const line = `${roleById(vote.roleId).catchphrases[0]}，我投${vote.targetSeat}号。`.slice(0, 20);
+    const line = vote.targetSeat === null ? '证据不足，我弃权。' : `${roleById(vote.roleId).catchphrases[0]}，我投${vote.targetSeat}号。`.slice(0, 20);
     return cueFields(game, {
       kind: 'vote', seat: vote.seat, roleId: vote.roleId,
       voice: game.seats.find(seat => seat.seat === vote.seat).voice,
@@ -744,8 +747,8 @@ function ensurePlan(game) {
   if (game.votePlan) return;
   refreshHuman(game);
   game.voteLocked = true;
-  game.votePlan = planVotes({ seats: game.seats, score: game.human.score, difficulty: game.difficulty, playerVote: game.playerVote });
-  game.judged = judgeOutcome({ tally: game.votePlan.tally, playerVote: game.playerVote });
+  game.votePlan = planVotes({ seats: game.seats, score: game.human.score, difficulty: game.difficulty, playerVote: game.playerVote, random: createRng(game.seed ^ 12345) });
+  game.judged = judgeOutcome({ tally: game.votePlan.tally, abstentions: game.votePlan.abstentions, playerVote: game.playerVote });
 }
 
 function speakingOrder(game) {
@@ -1065,6 +1068,8 @@ function buildReport(game) {
     cta: CTA,
     scapegoatMaster: judged.scapegoatMaster,
     tally: { ...game.votePlan.tally },
+    abstentions: game.votePlan.abstentions,
+    playerAbstained: game.playerAbstained,
     copySource: 'server',
   };
 }

@@ -140,3 +140,15 @@ test('text voting accepts a vote after ten seconds and confirms its target', asy
   assert.equal(game.phase, 'result');
   assert.equal(game.playerVote, target);
 });
+
+test('vote API maps both abstention request shapes to null', async () => {
+  const received = [];
+  const hub = createMixinHub({ createSession: () => ({
+    view: () => ({}), vote: seat => { received.push(seat); return {}; },
+  }) });
+  const created = await hub.dispatch({ method: 'POST', path: '/api/mixin' });
+  for (const body of [{ seat: null }, { skip: true }]) {
+    assert.equal((await hub.dispatch({ method: 'POST', path: `/api/mixin/${created.payload.id}/vote`, body })).status, 200);
+  }
+  assert.deepEqual(received, [null, null]);
+});
