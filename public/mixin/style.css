@@ -375,3 +375,15 @@ legend { font-size: 12px; letter-spacing: 0.18em; color: var(--muted); margin-bo
   .history li { margin-bottom: 10px; gap: 8px; }
   .caption { max-height: 16vh; gap: 4px; }
 }
+
+.seat { transition: transform .2s ease, box-shadow .2s ease; }
+.seat.speaking { transform: scale(1.025); z-index: 1; background: color-mix(in srgb, var(--tint) 12%, var(--bg)); box-shadow: 0 0 26px color-mix(in srgb, var(--tint) 30%, transparent), inset 0 0 18px color-mix(in srgb, var(--tint) 8%, transparent); }
+.seat.speaking em { color: var(--tint); display: block; }
+.soundwave { position: absolute; right: 16px; bottom: 18px; display: flex; align-items: center; gap: 3px; height: 22px; }
+.soundwave i { width: 3px; height: 18px; border-radius: 3px; background: var(--tint); animation: speaking-wave .8s ease-in-out infinite alternate; }
+.soundwave i:nth-child(2) { animation-delay: -.2s; height: 10px; }
+.soundwave i:nth-child(3) { animation-delay: -.4s; height: 22px; }
+.soundwave i:nth-child(4) { animation-delay: -.6s; height: 12px; }
+@keyframes speaking-wave { from { transform: scaleY(.35); } to { transform: scaleY(1); } }
+@media (max-width: 980px) { .soundwave { right: 10px; bottom: 8px; } }
+@media (prefers-reduced-motion: reduce) { .seat { transition: none; } .seat.speaking { transform: none; } .soundwave i { animation: none; } }
