@@ -3,7 +3,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { cardById, drawCards, replyFor, sceneById, SCENES } from './mixin-bank.mjs';
-import { renderEnding } from './mixin-endings.mjs';
+import { ENDING_FALLBACK, renderEnding } from './mixin-endings.mjs';
 import { openingLine, renderBrief, stageDirection, toneFor } from './mixin-prompts.mjs';
 import { PLAYER_ALIASES, ROLES, createRng, defaultLineup, pickAlias, pickLineup, relationshipLines, roleById, seatFrom, voiceOf } from './mixin-roles.mjs';
 import {
@@ -676,18 +676,24 @@ function beginReveal(game, now) {
   game.report = buildReport(game);
   const picked = pickQuotes(game.playerLines);
   const useLeak = game.report.outcome === '被识破';
-  const ending = renderEnding({
-    outcome: game.report.outcome,
-    humanScore: game.human.score,
-    playerVotes: game.report.received,
-    voters: game.report.from.map(item => item.name),
-    quote: useLeak ? picked.leak : picked.best,
-    keywords: useLeak ? picked.leakKeywords : picked.bestKeywords,
-  }, {
-    random: game.random,
-    recentIds: game.recentEndingIds,
-    templateId: game.endingTemplateId,
-  });
+  let ending;
+  try {
+    ending = renderEnding({
+      outcome: game.report.outcome,
+      humanScore: game.human.score,
+      playerVotes: game.report.received,
+      voters: game.report.from.map(item => item.name),
+      quote: useLeak ? picked.leak : picked.best,
+      keywords: useLeak ? picked.leakKeywords : picked.bestKeywords,
+    }, {
+      random: game.random,
+      recentIds: game.recentEndingIds,
+      templateId: game.endingTemplateId,
+    });
+  } catch (error) {
+    console.error(error);
+    ending = { id: null, text: ENDING_FALLBACK, recentIds: game.recentEndingIds };
+  }
   game.recentEndingIds = ending.recentIds;
   game.report.endingId = ending.id;
   game.report.endingText = ending.text;

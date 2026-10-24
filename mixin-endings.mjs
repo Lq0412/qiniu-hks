@@ -20,6 +20,8 @@ const SAFE = [
 ];
 
 export const ENDING_TEMPLATES = [...CAUGHT, ...SAFE];
+export const ENDING_FALLBACK = '揭晓完毕。五号的胜负和人味分以系统记录为准。';
+const PLACEHOLDERS = ['{玩家原话}', '{人味分}', '{投票者}'];
 
 function eligibleTemplates(outcome, playerVotes) {
   if (outcome === '被识破') return CAUGHT;
@@ -75,10 +77,16 @@ export function playerExcerpt(text, { keywords = [], pole = 'human' } = {}) {
 }
 
 function quoteSlot(quote, keywords, pole) {
-  const source = typeof quote === 'string' ? quote.trim() : '';
+  const source = typeof quote === 'string' ? quote.trim().replace(/[{}｛｝]/g, '') : '';
   if (!source) return '……';
   if (containsSwear(source)) return '（已和谐）';
   return playerExcerpt(source, { keywords, pole }) || '……';
+}
+
+function assertTemplate(template) {
+  let body = template.text;
+  for (const slot of PLACEHOLDERS) body = body.replaceAll(slot, '');
+  if (/[{}｛｝]/.test(body)) throw new Error(`结局模板还有占位符：${template.id}`);
 }
 
 export function renderEnding(input = {}, options = {}) {
@@ -88,12 +96,12 @@ export function renderEnding(input = {}, options = {}) {
   const recentIds = Array.isArray(options.recentIds) ? options.recentIds : [];
   const random = typeof options.random === 'function' ? options.random : Math.random;
   const picked = chooseTemplate(eligible, recentIds, random, options.templateId);
+  assertTemplate(picked);
   const pole = outcome === '被识破' ? 'human' : 'ai';
   const score = Number.isFinite(input.humanScore) ? Math.trunc(input.humanScore) : 0;
   const text = picked.text
-    .replaceAll('{玩家原话}', quoteSlot(input.quote, input.keywords, pole))
     .replaceAll('{人味分}', String(score))
-    .replaceAll('{投票者}', voterText(picked.id, input.voters));
-  if (/[{}]/.test(text)) throw new Error(`结局口播还有占位符：${picked.id}`);
+    .replaceAll('{投票者}', voterText(picked.id, input.voters))
+    .replaceAll('{玩家原话}', quoteSlot(input.quote, input.keywords, pole));
   return { id: picked.id, text, recentIds: [...recentIds, picked.id].slice(-3) };
 }

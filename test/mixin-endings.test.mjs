@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { titlesFor } from '../humanity.mjs';
-import { ENDING_TEMPLATES, renderEnding } from '../mixin-endings.mjs';
+import { ENDING_FALLBACK, ENDING_TEMPLATES, renderEnding } from '../mixin-endings.mjs';
 import { stageDirection } from '../mixin-prompts.mjs';
 import { createMixinGame } from '../mixin-game.mjs';
 import { createTextSession, playScript, runUntilResult } from '../mixin-session.mjs';
@@ -125,6 +125,52 @@ test('voter wording follows the headcount, and long or sensitive quotes are clip
   const silent = endingOf({ quote: '' }, { templateId: 'C1' });
   assert.match(silent.text, /你说「……」/);
   assert.doesNotMatch(silent.text, /[{}]/);
+});
+
+test('player braces are stripped and do not freeze the ending', async () => {
+  const braces = endingOf({ quote: '{好}' }, { templateId: 'C1' });
+  assert.equal(braces.text.includes('{'), false);
+  assert.equal(braces.text.includes('}'), false);
+  assert.match(braces.text, /你说「好」/);
+  const wide = endingOf({ quote: '｛好｝' }, { templateId: 'C1' });
+  assert.match(wide.text, /你说「好」/);
+  assert.equal(wide.text.includes('｛'), false);
+
+  const echoed = endingOf({ quote: '{人味分}', humanScore: 6 }, { templateId: 'C1' });
+  assert.match(echoed.text, /你说「人味分」/);
+  assert.match(echoed.text, /人味分是 6 分/);
+  assert.equal(echoed.text.includes('你说「6」'), false);
+  assert.doesNotMatch(echoed.text, /[{}｛｝]/);
+
+  const session = createTextSession({ demo: true, seed: 1, random: () => 0 });
+  const played = await playScript(session, {
+    rounds: ['{好}', '{好}'],
+    defense: '{好}',
+    interrupt: '{好}',
+    vote: 4,
+  });
+  assert.equal(session.game.phase, 'result');
+  assert.match(played.report.endingText, /好/);
+  assert.doesNotMatch(played.report.endingText, /[{}｛｝]/);
+
+  const errors = [];
+  const original = console.error;
+  console.error = (...args) => { errors.push(args); };
+  try {
+    const broken = createTextSession({
+      demo: true,
+      seed: 1,
+      random() { throw new Error('结局随机数坏了'); },
+    });
+    const view = await playScript(broken, caughtScript);
+    assert.equal(broken.game.phase, 'result');
+    assert.equal(view.report.endingText, ENDING_FALLBACK);
+    assert.equal(view.report.endingId, null);
+    assert.deepEqual(broken.game.recentEndingIds, []);
+    assert.equal(errors.length > 0, true);
+  } finally {
+    console.error = original;
+  }
 });
 
 test('the oral script stays out of the public view until reveal and does not change the title', async () => {
