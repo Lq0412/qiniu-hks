@@ -59,6 +59,24 @@ function literalSpan(text, mark) {
   return null;
 }
 
+const CLAUSE_PUNCT = /[，。！？、；：,.!?;]/;
+
+function clauseWindow(source, hit) {
+  const hitEnd = hit.index + hit.span.length;
+  let start = hit.index;
+  while (start > 0 && !CLAUSE_PUNCT.test(source[start - 1])) start -= 1;
+  let end = hitEnd;
+  while (end < source.length && !CLAUSE_PUNCT.test(source[end])) end += 1;
+  const clause = source.slice(start, end);
+  if (clause.length <= 14) return clause;
+  if (hit.span.length >= 14) return hit.span.slice(0, 14);
+  let windowStart = start;
+  if (hitEnd - windowStart > 14) windowStart = hitEnd - 14;
+  if (windowStart + 14 > source.length) windowStart = Math.max(0, source.length - 14);
+  if (windowStart > hit.index) windowStart = hit.index;
+  return source.slice(windowStart, Math.min(source.length, windowStart + 14));
+}
+
 export function playerExcerpt(text, { keywords = [], pole = 'human' } = {}) {
   const source = String(text ?? '').trim();
   if (!source) return '';
@@ -72,8 +90,10 @@ export function playerExcerpt(text, { keywords = [], pole = 'human' } = {}) {
   const preferred = hits.filter(hit => (pole === 'human' ? hit.delta > 0 : hit.delta < 0));
   const pool = preferred.length ? preferred : hits;
   pool.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.index - b.index);
-  const span = pool[0]?.span ?? source.slice(0, 14);
-  return span.length <= 14 ? span : span.slice(0, 14);
+  const best = pool[0];
+  if (!best) return source.slice(0, 14);
+  if (pole !== 'human') return best.span.length <= 14 ? best.span : best.span.slice(0, 14);
+  return clauseWindow(source, best);
 }
 
 function quoteSlot(quote, keywords, pole) {

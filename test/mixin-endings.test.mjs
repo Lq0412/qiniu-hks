@@ -102,9 +102,25 @@ test('voter wording follows the headcount, and long or sensitive quotes are clip
   const long = '前面先垫一句完全无关的话，我昨天加班到很晚，后面还有很多。';
   assert.ok(long.length > 14);
   const clipped = endingOf({ quote: long, keywords: ['算力减半'] }, { templateId: 'C1' });
-  assert.match(clipped.text, /你说「我昨天」/);
+  assert.match(clipped.text, /你说「我昨天加班到很晚」/);
   assert.equal(clipped.text.includes(long), false);
   assert.ok(quoted(clipped.text).every(piece => piece.length <= 14));
+  const demoLeak = '我昨天加班到十点，嗯，我妈也说好烦。';
+  assert.match(endingOf({ quote: demoLeak }, { templateId: 'C1' }).text, /你说「我昨天加班到十点」/);
+  const wide = '我昨天加班到很晚还没吃饭然后继续改方案';
+  assert.ok(wide.length > 14);
+  const slid = endingOf({ quote: wide }, { templateId: 'C1' });
+  assert.ok(quoted(slid.text).every(piece => piece.length <= 14 && piece.includes('我昨天')));
+  const late = '后面还有很多字然后才提到我昨天';
+  assert.match(endingOf({ quote: late }, { templateId: 'C1' }).text, /「面还有很多字然后才提到我昨天」/);
+  const longMark = '甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳';
+  const marked = endingOf({ quote: longMark, keywords: [longMark] }, { templateId: 'C1' });
+  assert.equal(quoted(marked.text)[0], longMark.slice(0, 14));
+  const aiLong = '前面先垫一句完全无关的话，作为一个语言模型继续说下去，后面还有很多。';
+  const aiClip = endingOf({
+    outcome: '潜伏成功', playerVotes: 1, voters: ['柯老师'], quote: aiLong,
+  }, { templateId: 'S2' });
+  assert.match(aiClip.text, /「作为一个」/);
 
   const plain = '这是一句没有任何特征的普通长句子用来垫字数';
   const head = endingOf({ outcome: '潜伏成功', playerVotes: 1, voters: ['柯老师'], quote: plain, keywords: ['x'] }, { templateId: 'S2' });
