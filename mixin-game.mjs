@@ -51,6 +51,8 @@ export const TIMEOUTS = {
   roundAiHard: 70000,
 };
 
+const graphemes = new Intl.Segmenter('zh', { granularity: 'grapheme' });
+
 const PUNCT_RE = /[\s，。！？、；：,.!?;:「」“”"'【】]/g;
 
 export function normalizeEcho(text) {
@@ -732,7 +734,7 @@ function announce(game, now) {
   const deadline = game.deadlineAt ?? now + TIMEOUTS.vote;
   ensurePlan(game);
   const cues = game.votePlan.votes.map(vote => {
-    const line = vote.targetSeat === null ? '证据不足，我弃权。' : `我投${vote.targetSeat}号，${roleById(vote.roleId).catchphrases[0]}。`.slice(0, 20);
+    const line = vote.targetSeat === null ? '证据不足，我弃权。' : Array.from(graphemes.segment(`我投${vote.targetSeat}号，${roleById(vote.roleId).catchphrases[0]}。`), part => part.segment).slice(0, 20).join('');
     return cueFields(game, {
       kind: 'vote', seat: vote.seat, roleId: vote.roleId,
       voice: game.seats.find(seat => seat.seat === vote.seat).voice,
@@ -822,7 +824,10 @@ function cueFields(game, fields) {
 
 function recordCue(game, cue, text, now, via, voiceUsed) {
   const trimmed = typeof text === 'string' ? text.trim() : '';
-  const spoken = (trimmed || cue.fallbackText).slice(0, cue.maxChars);
+  const source = trimmed || cue.fallbackText;
+  const spoken = cue.kind === 'vote'
+    ? Array.from(graphemes.segment(source), part => part.segment).slice(0, cue.maxChars).join('')
+    : source.slice(0, cue.maxChars);
   const row = { seat: cue.seat, roleId: cue.roleId, name: cue.name, text: spoken, round: game.round, phase: game.phase, at: now, kind: cue.kind, voiceUsed: voiceUsed ?? null, via };
   game.lines.push(row);
   game.dialogue.push(row);
