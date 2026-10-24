@@ -70,14 +70,18 @@ function record(active) {
 }
 async function change(path, body) {
   if (requestBusy) return; requestBusy = true; error.hidden = true;
-  try { hangup(); const data = await api(path, body); game = data.game; latest = ''; feedbackIssue = ''; note = '想好后，接通测试员开始回答。'; render(); }
-  catch (err) { showError(err.message); } finally { requestBusy = false; }
+  try { hangup(); const data = await api(path, body); game = data.game; latest = ''; feedbackIssue = ''; note = '想好后，接通测试员开始回答。'; render(); return true; }
+  catch (err) { showError(err.message); return false; } finally { requestBusy = false; }
 }
 app.addEventListener('click', async event => {
   const button = event.target.closest('button'); if (!button) return;
   if (['start','again'].includes(button.id)) await change('/api/game');
   if (button.id === 'restart' && confirm('重新开始会清空本次回答，确定吗？')) await change('/api/game');
-  if (button.id === 'next') { await change('/api/next', {revision:game.pending.revision}); if (game.status === 'reporting') await connect(); }
+  if (button.id === 'next') {
+    const continueVoice = connected || connecting;
+    const advanced = await change('/api/next', {revision:game.pending.revision});
+    if (advanced && (continueVoice || game.status === 'reporting')) await connect();
+  }
   if (button.id === 'retry-feedback') { hangup(); feedbackIssue = ''; await connect(true); }
   if (button.id === 'connect') { error.hidden = true; await connect(); }
   if (button.id === 'disconnect') { hangup(); note = '已挂断。'; render(); }
