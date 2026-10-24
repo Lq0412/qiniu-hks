@@ -273,7 +273,7 @@ export function autoIntent(game, { holdRead = false, readScale = 1, previousKind
     const delay = holdRead ? Math.round(readBeat(previousKind || game.cue.kind, previousText) * readScale) : 0;
     return { action: 'step', delay };
   }
-  return { action: 'tick', ms: TICK_MS, delay: Math.round(TICK_MS * Math.max(readScale, 0.2)) };
+  return { action: 'tick', ms: TICK_MS, delay: TICK_MS };
 }
 
 export function orchestrate(game, input = {}) {

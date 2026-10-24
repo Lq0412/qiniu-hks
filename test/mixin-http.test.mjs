@@ -113,3 +113,29 @@ test('the text hub rejects unknown sessions without touching Linx', async () => 
   clock = 60 * 60 * 1000 + 1;
   assert.equal((await aging.dispatch({ method: 'GET', path: `/api/mixin/${aged.payload.id}` })).status, 404);
 });
+
+test('text voting accepts a vote after ten seconds and confirms its target', async () => {
+  const hub = createMixinHub();
+  const created = await hub.dispatch({ method: 'POST', path: '/api/mixin', body: { sceneId: 'annual', difficulty: 'normal', seed: 42 } });
+  const id = created.payload.id;
+  const act = async (action, body = {}) => (await hub.dispatch({ method: 'POST', path: `/api/mixin/${id}/${action}`, body })).payload;
+  let { game } = await act('start');
+  for (let i = 0; i < 200 && game.phase !== 'vote'; i++) {
+    ({ game } = await act(game.cue ? 'step' : 'tick', { ms: 1000 }));
+  }
+  assert.equal(game.phase, 'vote');
+  const session = hub.sessions.get(id);
+  assert.equal(game.deadlineAt - session.now(), 30000);
+  ({ game } = await act('tick', { ms: 11000 }));
+  assert.equal(game.voteLocked, false);
+  const target = game.seats[2].seat;
+  const voted = await act('vote', { seat: target });
+  assert.equal(voted.accepted, true);
+  assert.equal(voted.game.playerVote, target);
+  assert.equal(voted.game.voteLocked, true);
+  for (let i = 0; i < 50 && game.phase !== 'result'; i++) {
+    ({ game } = await act(game.cue ? 'step' : 'tick', { ms: 1000 }));
+  }
+  assert.equal(game.phase, 'result');
+  assert.equal(game.playerVote, target);
+});
