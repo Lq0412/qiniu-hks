@@ -17,6 +17,7 @@ import {
   dockMode,
   friendlyError,
   phaseLabel,
+  phaseInstruction,
   randomAlias,
   randomSeed,
   remainingMs,
@@ -511,7 +512,7 @@ function errorHtml() {
 function paintTable() {
   const game = state.game;
   const phase = document.querySelector('#phase');
-  if (phase) phase.textContent = phaseLabel(game);
+  if (phase) phase.innerHTML = `${esc(phaseLabel(game))}<small>${esc(phaseInstruction(game))}</small>`;
   const live = document.querySelector('.live');
   if (live) live.innerHTML = `<i></i>REC · ${esc(difficultyName(game.difficulty))}`;
   paintHost();

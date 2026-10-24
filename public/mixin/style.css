@@ -387,3 +387,7 @@ legend { font-size: 12px; letter-spacing: 0.18em; color: var(--muted); margin-bo
 @keyframes speaking-wave { from { transform: scaleY(.35); } to { transform: scaleY(1); } }
 @media (max-width: 980px) { .soundwave { right: 10px; bottom: 8px; } }
 @media (prefers-reduced-motion: reduce) { .seat { transition: none; } .seat.speaking { transform: none; } .soundwave i { animation: none; } }
+
+.phase { text-align: center; }
+.phase small { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; letter-spacing: .02em; line-height: 1.5; }
+@media (max-width: 980px) { .phase { text-align: left; max-width: 65%; } .phase small { font-size: 11px; margin-top: 2px; } }

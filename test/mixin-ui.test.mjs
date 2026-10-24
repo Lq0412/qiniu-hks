@@ -24,6 +24,7 @@ import {
   orchestrate,
   paintShareCard,
   phaseLabel,
+  phaseInstruction,
   randomAlias,
   readBeat,
   remainingMs,
@@ -403,4 +404,14 @@ test('round dialogue keeps every current-round line in speech order', () => {
   assert.deepEqual(roundDialogue({ round: 2, dialogue: lines }), lines.slice(2));
   assert.deepEqual(roundDialogue({ round: 0, dialogue: lines }), lines.slice(0, 1));
   assert.deepEqual(roundDialogue(null), []);
+});
+
+
+test('phase instructions explain listening, interrupting, defending and voting', () => {
+  assert.match(phaseInstruction({ phase: 'round_wrap' }), /听群主串场/);
+  assert.match(phaseInstruction({ phase: 'accuse' }), /打断/);
+  assert.match(phaseInstruction({ phase: 'defense' }), /输入辩解并确认/);
+  assert.match(phaseInstruction({ phase: 'vote', voteLocked: false }), /点击下方模型投票/);
+  assert.match(phaseInstruction({ phase: 'vote', voteLocked: true }), /等待揭晓/);
+  assert.equal(phaseInstruction(null), '');
 });
