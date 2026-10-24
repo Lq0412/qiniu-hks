@@ -9,6 +9,8 @@ import {
   AI_CHIPS,
   ALIASES,
   CAST,
+  CHARACTERS,
+  characterOf,
   DIFFICULTIES,
   HOST_NAME,
   SCENES,
@@ -383,6 +385,20 @@ function assertConcealed(payload) {
   assert.equal(concealmentHolds(game), true, JSON.stringify({ phase: game.phase, humanScore: game.humanScore, aiScore: game.aiScore, votes: game.votes, outcome: game.outcome }));
   assert.equal(hasEndingSpeech(game), false);
 }
+
+test('every seatable persona, the player and the host map to one character sticker', async () => {
+  const css = await readFile(new URL('../public/mixin/style.css', import.meta.url), 'utf8');
+  const ids = [...CAST.map(item => item.roleId), 'player'];
+  const keys = new Set();
+  for (const id of ids) {
+    const character = characterOf(id);
+    assert.ok(CHARACTERS[id], id);
+    assert.ok(character.label, id);
+    assert.ok(css.includes(`.av-${character.key}{background-image:url(data:image/webp;base64,`), `${id} 缺贴纸`);
+    keys.add(character.key);
+  }
+  assert.equal(keys.size, ids.length);
+});
 
 test('reduced motion keeps player and voting timers at real-time speed', () => {
   for (const phase of ['round_player', 'defense', 'vote']) {

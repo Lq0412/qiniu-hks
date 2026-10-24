@@ -11,6 +11,21 @@ export const CAST = [
   { roleId: 'host', name: HOST_NAME },
 ];
 
+// 前端唯一的人设 → 角色映射：key 对应 assets/chars/<key>.webp（样式类 .av-<key>），label 是牌桌上显示的模型名。
+export const CHARACTERS = {
+  claudia: { key: 'claude', label: 'Claude' },
+  astra: { key: 'gpt', label: 'GPT' },
+  shensi: { key: 'deepseek', label: 'DeepSeek' },
+  baobao: { key: 'gemini', label: 'Gemini' },
+  xiaosi: { key: 'cursor', label: 'Cursor' },
+  player: { key: 'niu', label: '牛小七' },
+  host: { key: 'host', label: '群主' },
+};
+
+export function characterOf(roleId) {
+  return CHARACTERS[roleId] ?? { key: 'host', label: String(roleId ?? '') };
+}
+
 export const ALIASES = ['碳基-7B', '打工人-Turbo', '摸鱼-mini', '熬夜-Pro'];
 
 export const SCENES = [
