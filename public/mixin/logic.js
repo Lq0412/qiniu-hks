@@ -26,6 +26,28 @@ export function characterOf(roleId) {
   return CHARACTERS[roleId] ?? { key: 'host', label: String(roleId ?? '') };
 }
 
+// 揭晓后的人味分明细（后端 game.human.breakdown，逐项 {label,delta,quote,id}）按特征合并：
+// 同一特征累计 delta 与次数，留贡献最大的那句当例句；按 |delta| 排序，超出 limit 的并成「其他」。总和不变。
+export function summarizeBreakdown(items, limit = 4) {
+  if (!Array.isArray(items) || !items.length) return [];
+  const groups = new Map();
+  for (const item of items) {
+    const delta = Number(item?.delta) || 0;
+    if (!delta) continue;
+    const id = item.id ?? item.label ?? '?';
+    const group = groups.get(id) ?? { id, label: item.label || String(id), delta: 0, count: 0, quote: '', best: 0 };
+    group.delta += delta;
+    group.count += 1;
+    if (Math.abs(delta) > group.best && item.quote) { group.best = Math.abs(delta); group.quote = String(item.quote); }
+    groups.set(id, group);
+  }
+  const sorted = [...groups.values()].filter(group => group.delta).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  const head = sorted.slice(0, limit).map(({ best, ...group }) => group);
+  const rest = sorted.slice(limit);
+  if (rest.length) head.push({ id: 'other', label: '其他', delta: rest.reduce((sum, group) => sum + group.delta, 0), count: rest.reduce((sum, group) => sum + group.count, 0), quote: '' });
+  return head.filter(group => group.delta);
+}
+
 export const ALIASES = ['碳基-7B', '打工人-Turbo', '摸鱼-mini', '熬夜-Pro'];
 
 export const SCENES = [
@@ -109,15 +131,15 @@ function announcedVotes(votes) {
     targetName: vote.targetName ?? (vote.targetSeat === 5 ? '五号' : ''),
   }));
   const tally = {};
-  for (const vote of list) tally[vote.targetSeat] = (tally[vote.targetSeat] ?? 0) + 1;
-  return { votes: list, tally };
+  for (const vote of list) if (vote.targetSeat != null) tally[vote.targetSeat] = (tally[vote.targetSeat] ?? 0) + 1;
+  return { votes: list, tally, abstentions: list.filter(vote => vote.targetSeat == null).length };
 }
 
 export function sanitizeView(game) {
   if (!game || typeof game !== 'object') return null;
   const revealed = phaseRevealed(game.phase);
   const votes = revealed
-    ? (game.votes ? { votes: announcedVotes(game.votes)?.votes ?? [], tally: { ...(game.votes.tally ?? {}) } } : null)
+    ? (game.votes ? { votes: announcedVotes(game.votes)?.votes ?? [], tally: { ...(game.votes.tally ?? {}) }, abstentions: game.votes.abstentions ?? 0 } : null)
     : (game.phase === 'vote' ? announcedVotes(game.votes) : null);
   return {
     id: game.id,
@@ -152,8 +174,14 @@ export function sanitizeView(game) {
     } : null,
     humanScore: revealed ? game.humanScore : null,
     aiScore: revealed ? game.aiScore : null,
+    // 后端 #29 起揭晓后带逐项人味分；旧后端没有这个字段。
+    human: revealed && Array.isArray(game.human?.breakdown) ? {
+      score: game.human.score ?? null,
+      breakdown: game.human.breakdown.map(item => ({ id: item.id, label: item.label, delta: Number(item.delta) || 0, quote: String(item.quote ?? ''), kind: item.kind, round: item.round })),
+    } : null,
     interrupts: game.interrupts ?? 0,
     playerVote: game.playerVote ?? null,
+    playerAbstained: game.playerAbstained === true,
     voteLocked: !!game.voteLocked,
     votes,
     outcome: revealed ? (game.outcome ?? null) : null,
@@ -267,7 +295,7 @@ export function dockMode(game) {
   if (game.phase === 'round_player') return 'speak';
   if (game.phase === 'defense') return 'defense';
   if (game.phase === 'accuse') return 'interrupt';
-  if (game.phase === 'vote' && !game.voteLocked && game.playerVote == null && !game.cue) return 'vote';
+  if (game.phase === 'vote' && !game.voteLocked && game.playerVote == null && !game.playerAbstained && !game.cue) return 'vote';
   if (game.phase === 'vote') return 'ballots';
   return 'listen';
 }

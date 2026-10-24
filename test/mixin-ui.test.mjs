@@ -11,6 +11,7 @@ import {
   CAST,
   CHARACTERS,
   characterOf,
+  summarizeBreakdown,
   DIFFICULTIES,
   HOST_NAME,
   SCENES,
@@ -394,7 +395,9 @@ test('every seatable persona, the player and the host map to one character stick
     const character = characterOf(id);
     assert.ok(CHARACTERS[id], id);
     assert.ok(character.label, id);
-    assert.ok(css.includes(`.av-${character.key}{background-image:url(data:image/webp;base64,`), `${id} 缺贴纸`);
+    const file = character.key.replace(/-/g, '_');
+    assert.ok(css.includes(`.av-${character.key} { background-image: url(/mixin/assets/chars/${file}.webp); }`), `${id} 缺贴纸`);
+    await readFile(new URL(`../public/mixin/assets/chars/${file}.webp`, import.meta.url));
     keys.add(character.key);
   }
   assert.equal(keys.size, ids.length);
@@ -405,4 +408,22 @@ test('reduced motion keeps player and voting timers at real-time speed', () => {
     const intent = autoIntent({ phase, cue: null }, { readScale: 0.15 });
     assert.equal(intent.delay, intent.ms, `${phase}: one game second must take one real second`);
   }
+});
+
+test('humanity breakdown is merged per feature, sorted by impact and keeps the total', () => {
+  const items = [
+    { id: 'life', label: '生活细节', delta: 2, quote: '我昨天加班到十点' },
+    { id: 'ai-tone', label: '模型语气', delta: -1, quote: '作为一个 AI' },
+    { id: 'life', label: '生活细节', delta: 1, quote: '外卖凉了' },
+    { id: 'ai-tone', label: '模型语气', delta: -2, quote: '希望对你有帮助' },
+    { id: 'laugh', label: '说了笑声', delta: 1, quote: '哈哈' },
+    { id: 'filler', label: '多次口头语', delta: 1, quote: '嗯嗯' },
+    { id: 'length', label: '发言长度', delta: 0, quote: '…' },
+  ];
+  const groups = summarizeBreakdown(items, 2);
+  assert.deepEqual(groups.map(group => [group.label, group.delta, group.count]), [['生活细节', 3, 2], ['模型语气', -3, 2], ['其他', 2, 2]]);
+  assert.equal(groups[0].quote, '我昨天加班到十点');
+  assert.equal(groups[1].quote, '希望对你有帮助');
+  assert.equal(groups.reduce((sum, group) => sum + group.delta, 0), items.reduce((sum, item) => sum + item.delta, 0));
+  assert.deepEqual(summarizeBreakdown(undefined), []);
 });

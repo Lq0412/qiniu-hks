@@ -13,6 +13,7 @@ import {
   ballotCards,
   caughtQuote,
   characterOf,
+  summarizeBreakdown,
   clipUrl,
   createBody,
   dockMode,
@@ -52,7 +53,7 @@ const state = {
   holdRead: false,
   previousKind: '',
   previousText: '',
-  alias: '碳基-7B',
+  alias: '',
   sceneId: 'annual',
   difficulty: 'normal',
   draft: '',
@@ -364,6 +365,20 @@ async function vote(seat) {
   });
 }
 
+// 弃权：#29 起后端接受 {skip:true}。旧后端会拒绝（4xx 或 accepted:false），这时只提示，不影响正常投票。
+async function skipVote() {
+  await userAction(async () => {
+    try {
+      const result = await call('vote', { skip: true });
+      if (result.accepted === false || !state.game?.playerAbstained) toast('没弃权成功：投票已结束，或当前服务还不支持弃权。');
+    } catch (error) {
+      if (!(error?.status >= 400 && error.status < 500)) throw error;
+      if (error.payload?.game) adopt(error.payload.game);
+      toast('当前服务还不支持弃权，请点头像投票。');
+    }
+  });
+}
+
 async function finishCue() {
   if (state.game?.phase === 'reveal' && state.game.cue) {
     state.thinking = false;
@@ -465,8 +480,8 @@ function whoName(seat, fallback = '') {
   if (seat == null) return fallback;
   const role = seatRole(seat);
   if (role === 'host') return '群主';
-  if (role === 'player') return '牛小七';
-  return characterOf(role).label || fallback;
+  if (role === 'player') return state.game?.playerAlias || '牛小七';
+  return state.game?.seats?.find(item => item.seat === seat)?.name || characterOf(role).label || fallback;
 }
 
 // 逐字打出一句话。减少动态效果时直接显示整句。
@@ -539,13 +554,13 @@ function lobbyHtml() {
       </div>
       <div class="tag">你的化名</div>
       <div class="alias-row">
-        <input id="alias" name="alias" maxlength="12" autocomplete="off" aria-label="化名" value="${esc(state.alias)}">
+        <input id="alias" name="alias" maxlength="12" autocomplete="off" aria-label="化名" placeholder="牛小七（默认）" value="${esc(state.alias)}">
         <button class="copy" type="button" id="random">随机</button>
       </div>
     </div>
     <div class="lineup" id="lineup">
-      ${guests.map(item => `<div class="slot">${av(item.roleId)}<span class="nm">${esc(characterOf(item.roleId).label)}</span><small>${esc(item.name)}</small></div>`).join('')}
-      <div class="slot me">${av('player')}<span class="nm">牛小七</span><small>5 号 · 你</small></div>
+      ${guests.map(item => `<div class="slot">${av(item.roleId)}<span class="nm">${esc(characterOf(item.roleId).label)}</span><small>AI 嘉宾</small></div>`).join('')}
+      <div class="slot me">${av('player')}<span class="nm">${esc(state.alias || '牛小七')}</span><small>5 号 · 你</small></div>
     </div>
     <div class="rule">${mini('player')}<span>你是 <b>牛小七</b>，混在 AI 里，<b>别被认出来</b>。<small>每局随机 4 位嘉宾上桌 · 文字模式，不连灵矽、不开麦</small></span></div>
     <button class="btn go" type="submit" id="start">开播 ▶</button>
@@ -568,6 +583,7 @@ function tableHtml() {
       <span class="slant" id="phase"></span>
       <div class="timer"><i id="bar"></i></div>
       <span class="pill clock" id="clock">⏱ <span id="count">–</span><small id="count-label"></small></span>
+      <button class="pill skip" id="skip" type="button" hidden aria-label="SKIP 弃权"><span class="skip-txt">SKIP 弃权</span><span class="votes" id="skip-votes"></span><b class="skip-n" id="skip-n"></b></button>
       <span class="pill tally" id="tally" hidden>已投 <b id="tally-n">0</b>/5</span>
       <span class="pill live" id="live"></span>
     </header>
@@ -656,10 +672,12 @@ function paintSeats() {
 
 function cardHtml(seat, span) {
   const character = characterOf(seat.roleId);
-  const tag = seat.you ? `你 · ${esc(state.game?.playerAlias || '五号')}` : `${esc(seat.name)} · ${seat.seat} 号`;
+  // 名字以后端为准（#29 起为 Claude / GPT / … / 牛小七）；旧后端名字与图标不同时把图标名放进小标签。
+  const name = seat.you ? (state.game?.playerAlias || '牛小七') : (seat.name || character.label);
+  const tag = seat.you ? `你 · ${seat.seat} 号` : name === character.label ? `${seat.seat} 号` : `${esc(character.label)} · ${seat.seat} 号`;
   return `<article class="card span-${span}${seat.you ? ' you' : ''}" data-seat="${seat.seat}">
     ${av(seat.roleId)}
-    <div class="who"><span class="waves" aria-hidden="true">(((</span><span class="nm">${esc(character.label)}</span><small>${tag}</small><span class="waves" aria-hidden="true">)))</span></div>
+    <div class="who"><span class="waves" aria-hidden="true">(((</span><span class="nm">${esc(name)}</span><small>${tag}</small><span class="waves" aria-hidden="true">)))</span></div>
     <div class="say"></div>
     <div class="bubble" hidden><span class="text"></span></div>
     <div class="votes"></div>
@@ -735,10 +753,10 @@ function paintDock() {
     example.hidden = !game.example;
     example.textContent = game.example ? `💡 灵感：${game.example}` : '';
   }
-  const mine = el.querySelector('#mine') || (['vote', 'defense'].includes(mode) && game.playerVote != null ? note : null);
+  const mine = el.querySelector('#mine') || (['vote', 'defense'].includes(mode) && (game.playerVote != null || game.playerAbstained) ? note : null);
   if (mine) {
     const target = game.seats.find(seat => seat.seat === game.playerVote);
-    mine.textContent = target ? `✓ 已投 ${whoName(target.seat, target.name)}（${target.seat} 号）` : game.voteLocked ? '投票已结束，你未投票' : '你还没投票';
+    mine.textContent = target ? `✓ 已投 ${whoName(target.seat, target.name)}（${target.seat} 号）` : game.playerAbstained ? '✓ 你弃权了' : game.voteLocked ? '投票已结束，你未投票' : '你还没投票';
   }
   const logCount = el.querySelector('#log-count');
   if (logCount) logCount.textContent = String(game.dialogue?.length ?? 0);
@@ -760,7 +778,7 @@ function dockHtml(mode) {
   if (mode === 'speak') return `${hold}${lineForm('像模型一样回答这张卡', '确认')}<button class="btn ghost sm" type="button" id="hint">给我灵感</button>${drawer}`;
   if (mode === 'defense') return `${hold}${lineForm('甩一句锅，或直接点头像投票', '确认')}<p class="hint" id="note"></p>${drawer}`;
   if (mode === 'interrupt') return `${hold}${lineForm('打断这句，替自己辩一下', '打断')}<p class="hint" id="note"></p>${drawer}`;
-  if (mode === 'vote') return `<div class="hint big"><b>👆 点击头像投票</b><span id="note"></span></div>${drawer}`;
+  if (mode === 'vote') return `<div class="hint big"><b>👆 点击头像投票，或点右上 SKIP 弃权</b><span id="note"></span></div>${drawer}`;
   if (mode === 'ballots') return `<div class="hint"><span id="note"></span><b id="mine" role="status"></b></div>${drawer}`;
   return `<span class="btn mic wait" aria-hidden="true">${ICON.mic}</span><div class="hint"><b>按住说话</b><span id="note"></span></div>${drawer}`;
 }
@@ -788,20 +806,31 @@ function paintVotes() {
   const cards = ballotCards(game);
   const fresh = cards.slice(fx.shown);
   fx.shown = cards.length;
-  if (game.playerVote != null && fx.player == null && ['vote', 'defense'].includes(game.phase)) {
-    fx.player = game.playerVote;
-    fresh.unshift({ seat: game.playerSeat ?? 5, targetSeat: game.playerVote });
+  const playerIn = game.playerVote != null || game.playerAbstained === true;
+  if (playerIn && fx.player == null && ['vote', 'defense'].includes(game.phase)) {
+    fx.player = game.playerVote ?? 'skip';
+    fresh.unshift({ seat: game.playerSeat ?? 5, targetSeat: game.playerVote ?? null });
   }
   for (const ballot of fresh) fx.queue = fx.queue.then(() => landVote(ballot, fx)).catch(() => {});
   const count = document.querySelector('#tally-n');
-  if (count) count.textContent = String(cards.length + (game.playerVote != null ? 1 : 0));
+  if (count) count.textContent = String(cards.length + (playerIn ? 1 : 0));
+  const skip = document.querySelector('#skip');
+  if (skip) {
+    skip.hidden = !['defense', 'vote'].includes(game.phase);
+    const open = !game.voteLocked && !playerIn && ['defense', 'vote'].includes(game.phase);
+    skip.classList.toggle('open', open);
+    skip.classList.toggle('picked', game.playerAbstained === true);
+    skip.setAttribute('aria-disabled', String(!open));
+  }
 }
 
 async function landVote(ballot, fx) {
   if (state.voteFx !== fx) return;
   const wall = document.querySelector('#seats');
   const from = wall?.querySelector(`.card[data-seat="${ballot.seat}"]`);
-  const to = wall?.querySelector(`.card[data-seat="${ballot.targetSeat}"]`);
+  // 弃权票（targetSeat 为 null）飞向顶栏的 SKIP 牌。
+  const abstain = ballot.targetSeat == null;
+  const to = abstain ? document.querySelector('#skip') : wall?.querySelector(`.card[data-seat="${ballot.targetSeat}"]`);
   if (!from || !to) return;
   const role = seatRole(ballot.seat);
   const slot = to.querySelector('.votes');
@@ -812,6 +841,13 @@ async function landVote(ballot, fx) {
   if (!from.querySelector('.check')) {
     from.insertAdjacentHTML('beforeend', `<span class="check">${ICON.check}</span>`);
     pop(from.querySelector('.check'));
+  }
+  if (abstain) {
+    fx.skips = (fx.skips ?? 0) + 1;
+    const n = to.querySelector('#skip-n');
+    if (n) { n.textContent = `×${fx.skips}`; pop(n); }
+    await wait(240);
+    return;
   }
   fx.counts[ballot.targetSeat] = (fx.counts[ballot.targetSeat] ?? 0) + 1;
   const badge = to.querySelector('.count');
@@ -1010,10 +1046,17 @@ async function runReveal(report, key) {
   ];
   const chipsEl = $('#chips');
   if (chipsEl) chipsEl.innerHTML = '';
+  // 有逐项明细（后端 #29）就按项累加人味分；没有就退回统计 chips。
+  const items = summarizeBreakdown(state.game?.human?.breakdown ?? report.human?.breakdown);
+  if (items.length) {
+    chips.splice(0, chips.length, ['得票', `${report.received ?? 0}/${report.of ?? 4}`, caught]);
+    $('#meter')?.classList.add('detail');
+  }
+  const itemChip = item => `<span class="chip ${item.delta > 0 ? 'plus' : 'mul'}"><b>${item.delta > 0 ? '+' : ''}${esc(item.delta)}</b>${esc(item.label)}${item.count > 1 ? `<small>×${esc(item.count)}</small>` : ''}</span>`;
   if (reduced) {
     for (const el of ['#flip', '#stamp', '#win', '#meter', '#recap', '#acts', '#ending-row', '#roast', '#meta']) $(el)?.classList.add('on', 'show', 'flipped');
     $('#box')?.classList.add('gone');
-    if (chipsEl) chipsEl.innerHTML = chips.map(([label, value, hot]) => `<span class="chip${hot ? ' mul' : ''}"><b>${esc(value)}</b>${esc(label)}</span>`).join('');
+    if (chipsEl) chipsEl.innerHTML = items.map(itemChip).join('') + chips.map(([label, value, hot]) => `<span class="chip${hot ? ' mul' : ''}"><b>${esc(value)}</b>${esc(label)}</span>`).join('');
     $('#human').textContent = String(report.humanScore ?? '—');
     $('#ai-score').textContent = String(report.aiScore ?? '—');
     $('#cap').innerHTML = name ? `<b>${esc(name)}</b> 被投出了…… 身份是：` : '没人被投出去……';
@@ -1057,20 +1100,35 @@ async function runReveal(report, key) {
   $('#win')?.classList.add('on');
   await wait(300);
   $('#meter')?.classList.add('on');
+  let running = 0;
+  const quoteEl = $('#quote');
+  const restore = quoteEl?.innerHTML;
+  for (const item of items) {
+    if (!live()) return;
+    chipsEl?.insertAdjacentHTML('beforeend', itemChip(item));
+    pop(chipsEl?.lastElementChild);
+    if (quoteEl && item.quote) quoteEl.innerHTML = `<small>${esc(item.label)} ${item.delta > 0 ? '+' : ''}${esc(item.delta)} · 来自这句</small>「${esc(item.quote)}」`;
+    const from = running;
+    running += item.delta;
+    await countUp($('#human'), running, 380, from);
+    pop($('#human')?.parentElement);
+    await wait(420);
+  }
+  if (items.length && quoteEl && restore != null) quoteEl.innerHTML = restore;
   for (const [label, value, hot] of chips) {
     if (!live()) return;
     chipsEl?.insertAdjacentHTML('beforeend', `<span class="chip${hot ? ' mul' : ''}"><b>${esc(value)}</b>${esc(label)}</span>`);
     pop(chipsEl?.lastElementChild);
     await wait(260);
   }
-  await Promise.all([countUp($('#human'), report.humanScore), countUp($('#ai-score'), report.aiScore)]);
+  await Promise.all([countUp($('#human'), report.humanScore ?? (items.length ? running : undefined), items.length ? 300 : 900, items.length ? running : 0), countUp($('#ai-score'), report.aiScore)]);
   pop($('#human')?.parentElement);
   shake();
   await wait(250);
   for (const el of ['#ending-row', '#roast', '#recap', '#meta', '#acts']) $(el)?.classList.add('on');
 }
 
-function countUp(el, to, ms = 900) {
+function countUp(el, to, ms = 900, from = 0) {
   if (!el) return Promise.resolve();
   if (typeof to !== 'number') {
     el.textContent = '—';
@@ -1084,7 +1142,7 @@ function countUp(el, to, ms = 900) {
   return new Promise(resolve => {
     const frame = now => {
       const k = Math.min(1, (now - t0) / ms);
-      el.textContent = String(Math.round(to * (1 - (1 - k) ** 3)));
+      el.textContent = String(Math.round(from + (to - from) * (1 - (1 - k) ** 3)));
       if (k < 1) requestAnimationFrame(frame);
       else resolve();
     };
@@ -1175,6 +1233,7 @@ app.addEventListener('click', event => {
     if (input) input.value = state.alias;
   }
   if (button.id === 'hint') askHint();
+  if (button.id === 'skip' && button.classList.contains('open')) skipVote();
   if (button.id === 'again') again();
   if (button.id === 'share') downloadCard();
   if (button.id === 'back') backToLobby();
