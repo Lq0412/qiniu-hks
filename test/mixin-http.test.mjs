@@ -125,9 +125,10 @@ test('text voting accepts a vote after ten seconds and confirms its target', asy
   }
   assert.equal(game.phase, 'vote');
   const session = hub.sessions.get(id);
-  assert.equal(game.deadlineAt - session.now(), 30000);
+  const votingWindow = game.deadlineAt - session.now();
   ({ game } = await act('tick', { ms: 11000 }));
   assert.equal(game.voteLocked, false);
+  assert.equal(votingWindow, 30000);
   const target = game.seats[2].seat;
   const voted = await act('vote', { seat: target });
   assert.equal(voted.accepted, true);
