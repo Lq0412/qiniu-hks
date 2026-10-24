@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { sanitizeForTts } from '../tts-text.mjs';
 import { createMixinLink } from '../mixin-link.mjs';
 import { presynthCatalog } from '../mixin-prompts.mjs';
 import { roleById, voiceOf } from '../mixin-roles.mjs';
@@ -113,7 +114,7 @@ test('speak:round uses one socket, distinct voices, verbatim host lines, and dro
     const detect = fake.detects[index];
     assert.equal(detect.agent_params.custom_replace_prompt, undefined);
     assert.equal(detect.agent_params.voice.id, voiceOf(roleById(cue.roleId)).voiceId);
-    assert.match(detect.text, new RegExp(`【台词】${cue.line}`));
+    assert.ok(detect.text.includes(`【台词】${sanitizeForTts(cue.line)}`));
     voices.add(detect.agent_params.voice.id);
   }
   assert.equal(voices.size, SPEAK_ROUND.length);
@@ -201,6 +202,27 @@ test('presynth writes stable small mxop files and a manifest on one connection',
     assert.equal(/口播「/.test(logs.join('\n')), false);
     assert.match(logs.join('\n'), /这些文件已在 \.gitignore 里，不要提交。/);
   } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('presynth sanitizes detect text and preserves manifest text and stable keys', async () => {
+  const fake = installFake();
+  const dir = await mkdtemp(path.join(tmpdir(), 'presynth-tts-'));
+  const link = createMixinLink({
+    config: { deviceId: 'fake-device', clientId: 'fake-client' },
+    credentials: { url: 'wss://xrobo-io.qiniuapi.com/v1/ws/', token: 'fake-token' },
+    createSocket: fake.createSocket,
+  });
+  try {
+    await link.connect();
+    const item = { id: 'list', roleId: 'host', text: '1️⃣核对🙂②结论👍' };
+    const report = await runPresynth({ dir, link, catalog: [item], log() {} });
+    assert.ok(fake.detects[0].text.includes('【台词】第一、核对第二、结论（局势：'));
+    assert.equal(report.lines[0].text, item.text);
+    assert.equal(report.lines[0].file, 'list.mxop');
+  } finally {
+    link.close();
     await rm(dir, { recursive: true, force: true });
   }
 });

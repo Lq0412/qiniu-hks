@@ -6,6 +6,7 @@ import OpusScript from 'opusscript';
 import { isStageEcho, normalizeEcho } from './mixin-game.mjs';
 import { HELLO_BRIEF, scriptedBody } from './mixin-prompts.mjs';
 import { scrub } from './linx-credentials.mjs';
+import { sanitizeForTts } from './tts-text.mjs';
 
 const AUDIO = {
   format: 'pcm',
@@ -37,7 +38,7 @@ export function buildMixinDetect({ text, voiceId, mode = 'manual' } = {}) {
     type: 'listen',
     state: 'detect',
     mode,
-    text,
+    text: sanitizeForTts(text),
     agent_params: { voice: { id } },
   };
 }
@@ -265,7 +266,7 @@ export function createMixinLink({
       if (Object.hasOwn(message, 'agent_params') && message.agent_params.custom_replace_prompt) throw new Error('listen 不能携带 custom_replace_prompt');
       const id = ++seq;
       const promise = new Promise((resolve, reject) => {
-        queued.push({ seq: id, text, message, onSent, spoken: [], pcm: [], frames: [], aborted: false, resolve, reject });
+        queued.push({ seq: id, text: message.text, message, onSent, spoken: [], pcm: [], frames: [], aborted: false, resolve, reject });
         startQueued();
       });
       promise.seq = id;

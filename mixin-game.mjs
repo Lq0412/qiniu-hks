@@ -2,6 +2,7 @@
 // 本模块不打开灵矽、不申请麦克风。文字模式把 hello 视为已满足；真连接以后只读 phase 和 generation。
 
 import { randomUUID } from 'node:crypto';
+import { sanitizeForTts } from './tts-text.mjs';
 import { cardById, drawCards, replyFor, sceneById, SCENES } from './mixin-bank.mjs';
 import { ENDING_FALLBACK, renderEnding } from './mixin-endings.mjs';
 import { accusationLine, HOST_NUDGE, HOST_RULES, HOST_SKIP_PLAYER, HOST_WRAP_EARLY, HOST_WRAP_LATE, openingLine, renderBrief, stageDirection, toneFor } from './mixin-prompts.mjs';
@@ -53,7 +54,7 @@ export const TIMEOUTS = {
 const PUNCT_RE = /[\s，。！？、；：,.!?;:「」“”"'【】]/g;
 
 export function normalizeEcho(text) {
-  return String(text ?? '').toLowerCase().replace(PUNCT_RE, '');
+  return sanitizeForTts(String(text ?? '')).toLowerCase().replace(PUNCT_RE, '');
 }
 
 export function isStageEcho(text, notes, hook, game) {
