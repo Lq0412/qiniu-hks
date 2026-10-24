@@ -7,3 +7,4 @@ playwright-report/
 test-results/
 *.log
 .linx-device.json
+probe-results/
