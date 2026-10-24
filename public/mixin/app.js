@@ -479,7 +479,6 @@ function tableHtml() {
 
 function revealHtml() {
   return `<main class="reveal-screen">
-    <section class="result-copy">
     <p class="eyebrow">揭晓 · ${esc(HOST_NAME)}</p>
     <p class="outcome" id="outcome"></p>
     <h1 id="card-title"></h1>
@@ -494,11 +493,7 @@ function revealHtml() {
       <button class="ghost" type="button" id="share">下载分享卡</button>
       <button class="ghost" type="button" id="back">返回开局</button>
     </div>
-    </section>
-    <figure class="share-preview" id="share-preview" hidden>
-      <canvas id="card" width="1080" height="1440" role="img" aria-label="本局分享卡预览"></canvas>
-      <figcaption>本局分享卡 · 点击「下载分享卡」保存</figcaption>
-    </figure>
+    <canvas id="card" width="1080" height="1440" hidden></canvas>
   </main>`;
 }
 
@@ -698,11 +693,6 @@ function paintReveal() {
     meta.textContent = bits.filter(Boolean).join(' · ');
   }
   paintBallots(document.querySelector('#ballots'));
-  const model = shareCardModel(game);
-  const preview = document.querySelector('#share-preview');
-  const canvas = document.querySelector('#card');
-  if (preview) preview.hidden = !model;
-  if (canvas && model) paintShareCard(canvas.getContext('2d'), model);
 }
 
 function paintError() {
