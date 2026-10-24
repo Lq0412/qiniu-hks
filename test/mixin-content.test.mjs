@@ -1,11 +1,47 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ACCUSE_PROMPT, allCards, cardById, drawCards, replyFor, sceneById, SCENES } from '../mixin-bank.mjs';
 import { agentPrompt, openingLine, renderBrief, reportInstruction, stageDirection, toneFor } from '../mixin-prompts.mjs';
 import { HOST, PLAYER_ALIASES, ROLES, createRng, defaultLineup, pickAlias, pickLineup, relationshipLines, roleById, voiceOf } from '../mixin-roles.mjs';
 import { VOICE_CATALOG } from '../mixin-voice.mjs';
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const SKIP_DIRS = new Set(['node_modules', '.git', 'coverage', 'probe-results', 'playwright-report', 'test-results']);
+
+function walkRepoFiles(dir = ROOT) {
+  const files = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (SKIP_DIRS.has(entry.name)) continue;
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...walkRepoFiles(full));
+    else if (entry.isFile()) files.push(full);
+  }
+  return files;
+}
+
+function repoFiles(run = execFileSync) {
+  try {
+    const listed = run('git', ['ls-files', '-z'], {
+      encoding: 'utf8',
+      cwd: ROOT,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return listed.split('\0').filter(Boolean).map(file => join(ROOT, file));
+  } catch {
+    return walkRepoFiles();
+  }
+}
+
+function assertNoRetiredVoice(files) {
+  const retiredVoice = '9d91653b2adf4aa9' + 'ad97e1c8f63fbda3';
+  for (const file of files) {
+    assert.equal(readFileSync(file, 'utf8').includes(retiredVoice), false, file);
+  }
+}
 
 test('roles are fictional, keep a voice slot, and can be dealt', () => {
   assert.equal(ROLES.length, 5);
@@ -129,10 +165,7 @@ test('prompts keep the brief slot and can render every stage direction', () => {
   assert.match(architecture, /角色id=音色id/);
   assert.match(architecture, /3\.0–3\.5/);
   assert.match(architecture, /\{\{counter_brief\}\}/);
-  const retiredVoice = '9d91653b2adf4aa9' + 'ad97e1c8f63fbda3';
-  for (const file of execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean)) {
-    assert.equal(readFileSync(new URL(`../${file}`, import.meta.url), 'utf8').includes(retiredVoice), false, file);
-  }
+  assertNoRetiredVoice(repoFiles());
   assert.equal(Number(VOICE_CATALOG.baobao.voiceId).toString() === VOICE_CATALOG.baobao.voiceId, false);
   assert.equal(Number(VOICE_CATALOG.baobao.fallbackVoiceId).toString() === VOICE_CATALOG.baobao.fallbackVoiceId, false);
   const previous = process.env.MIXIN_VOICE_IDS;
@@ -155,4 +188,17 @@ test('prompts keep the brief slot and can render every stage direction', () => {
     if (previous == null) delete process.env.MIXIN_VOICE_IDS;
     else process.env.MIXIN_VOICE_IDS = previous;
   }
+});
+
+test('retired voice scan walks files when git is unavailable', () => {
+  const files = repoFiles(() => {
+    const error = new Error('git missing');
+    error.code = 'ENOENT';
+    throw error;
+  });
+  assert.ok(files.length > 10);
+  assert.ok(files.some(file => file.endsWith('/test/mixin-content.test.mjs')));
+  assert.ok(files.every(file => !file.split('/').includes('node_modules')));
+  assert.ok(files.every(file => !file.split('/').includes('.git')));
+  assertNoRetiredVoice(files);
 });

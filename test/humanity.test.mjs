@@ -117,6 +117,8 @@ test('chinese neighbors do not turn innocent sentences into swears or identity l
   assert.equal(has(feature('我是人类'), 'break'), true);
   assert.equal(has(feature('我就是人类'), 'break'), true);
   assert.equal(feature('我就是人类').features.find(item => item.id === 'break').delta, 3);
+  assert.equal(has(feature('我就是人类学家'), 'break'), false);
+  assert.equal(feature('我就是人类学家').delta, 0);
   assert.equal(has(feature('人类学家'), 'break'), false);
   assert.equal(feature('人类学家').delta, 0);
   assert.equal(containsSwear('其他妈妈都这么说'), false);
@@ -163,6 +165,7 @@ test('ordinary Chinese sentences stay at zero', () => {
     '其他妈妈都这么说，我也是这么听的。',
     '他妈妈来了，会议先暂停一下。',
     '我是人类学家，这篇只讨论田野方法。',
+    '我就是人类学家，这篇只讨论田野方法。',
     '我是真人秀的观众，不参加录制。',
     '我就是人才市场门口路过，没有投简历。',
     '这个范围先对齐，晚上再回复你。',
@@ -212,6 +215,37 @@ test('ASR punctuation, clocks and numeral variants match the same keyword', () =
   assert.equal(hitsKeyword(spoken, ['8块']), false);
   assert.equal(hitsKeyword('18块钱', ['8块']), false);
   assert.equal(hitsKeyword('晚上８点见', ['8点']), true);
+});
+
+test('「我就是人类学家」 is not an identity leak, 「我就是人类」 still is', () => {
+  for (const text of ['我就是人类学家', '其实我就是人类学家，只谈田野。']) {
+    const scored = feature(text);
+    assert.equal(has(scored, 'break'), false, text);
+    assert.equal(scored.delta, 0, `${text} ${JSON.stringify(scored.features)}`);
+  }
+  const admitted = feature('我就是人类');
+  assert.equal(has(admitted, 'break'), true);
+  assert.equal(admitted.features.find(item => item.id === 'break').delta, 3);
+  assert.equal(has(feature('我是人类'), 'break'), true);
+  assert.equal(has(feature('我是人类学家'), 'break'), false);
+});
+
+test('decimals followed by a measure word or 刻 are not clock times', () => {
+  assert.equal(normalizeForMatch('三点五倍'), '三点五倍');
+  assert.equal(normalizeForMatch('一点五公里'), '一点五公里');
+  assert.equal(normalizeForMatch('三点五米'), '三点五米');
+  assert.equal(normalizeForMatch('一点五元'), '一点五元');
+  assert.equal(normalizeForMatch('三点五万'), '三点五万');
+  assert.equal(normalizeForMatch('七点三刻'), '七点三刻');
+  assert.equal(normalizeForMatch('7:30倍'), '7:30倍');
+  assert.equal(normalizeForMatch('七点三'), '7:30');
+  assert.equal(normalizeForMatch('三点五'), '3:50');
+  assert.equal(normalizeForMatch('七点三十'), '7:30');
+  assert.equal(normalizeForMatch('七点三十分'), '7:30');
+  assert.equal(hitsKeyword('三点五倍', ['3:50']), false);
+  assert.equal(hitsKeyword('一点五公里', ['1:50']), false);
+  assert.equal(hitsKeyword('七点三刻见', ['7:30']), false);
+  assert.equal(hitsKeyword('七点三出门', ['7:30']), true);
 });
 
 test('quoting someone else is a calm frame only when six characters match', () => {
