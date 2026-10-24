@@ -66,5 +66,10 @@ export function createAudioLane({ openLink, dir, log = () => {}, timeoutMs = 100
     releaseGame() {
       if (mode === 'game') mode = 'idle';
     },
+    close() {
+      cancel = true;
+      try { link?.abort(); } catch { /* 还没连上 */ }
+      try { link?.close(); } catch { /* 已经关闭 */ }
+    },
   };
 }

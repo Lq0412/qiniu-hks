@@ -9,6 +9,8 @@ import { connectLinx } from './linx.mjs';
 import { createMixinLink } from './mixin-link.mjs';
 import { createAudioLane } from './mixin-lane.mjs';
 import { createMixinHub } from './mixin-http.mjs';
+import { createTextSession } from './mixin-session.mjs';
+import { createVoiceSession } from './mixin-live.mjs';
 
 const assets = {
   '/': ['index.html', 'text/html'],
@@ -25,14 +27,15 @@ const assets = {
   '/mixin/logic.js': ['mixin/logic.js', 'text/javascript'],
 };
 
-export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice = connectLinx, mixinCredentials = null, openAudioLink = null, audioDir = null } = {}) {
+export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice = connectLinx, mixinCredentials = null, openAudioLink = null, audioDir = null, log = console.log, presynthCatalog = undefined } = {}) {
   const sessions = new Map();
-  const mixin = createMixinHub();
+  const speechDir = audioDir ?? fileURLToPath(new URL('./public/mixin/audio/', import.meta.url));
   let audioLane = null;
   if (mixinCredentials?.credentials?.url && mixinCredentials?.credentials?.token) {
     audioLane = createAudioLane({
-      dir: audioDir ?? fileURLToPath(new URL('./public/mixin/audio/', import.meta.url)),
-      log: line => console.log(line),
+      dir: speechDir,
+      log,
+      catalog: presynthCatalog,
       openLink: openAudioLink ?? (() => createMixinLink({
         config: mixinCredentials.config,
         credentials: mixinCredentials.credentials,
@@ -40,6 +43,11 @@ export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice =
     });
     audioLane.warmupBackground();
   }
+  const mixin = createMixinHub({
+    createSession: options => (audioLane
+      ? createVoiceSession({ options, lane: audioLane, audioDir: speechDir })
+      : createTextSession(options)),
+  });
   let active = null;
   const sidOf = req => /(?:^|;\s*)counter=([a-f0-9-]+)/.exec(req.headers.cookie ?? '')?.[1];
   const server = http.createServer(async (req, res) => {
@@ -65,6 +73,13 @@ export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice =
           const id = path.split('/')[3];
           const cookie = /(?:^|;\s*)mixin=([0-9a-f-]+)/.exec(req.headers.cookie ?? '')?.[1];
           if (!cookie || cookie !== id) return json(409, { error: '这局不属于当前会话。' });
+        }
+        const clipMatch = /^\/api\/mixin\/([0-9a-f-]+)\/clip\/([0-9a-f-]+)$/.exec(path);
+        if (clipMatch && req.method === 'GET') {
+          const wav = mixin.clip(clipMatch[1], clipMatch[2]);
+          if (!wav) return json(404, { error: '没有这段音频。' });
+          res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': String(wav.length), 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+          return res.end(wav);
         }
         const result = await mixin.dispatch({ method: req.method, path, body: body ? JSON.parse(body) : {} });
         return json(result.status, result.payload, result.headers ?? {});
@@ -116,7 +131,7 @@ export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice =
       catch { if(active === handle)active=null; client.close(1011,'Linx连接参数无效'); }
     });
   });
-  server.on('close', () => { active?.bridge?.close(); wss.close(); });
+  server.on('close', () => { active?.bridge?.close(); audioLane?.close(); wss.close(); });
   server.audioLane = audioLane;
   return server;
 }

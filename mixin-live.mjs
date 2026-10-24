@@ -1,0 +1,204 @@
+// 浏览器这一局的语音。一条连接从预合成交接到对局，按 /api/mixin 的 step 出 WAV。
+// 没有预合成文件时走实时合成；还是没有音频就只留字幕。文字局不走这里。
+
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import {
+  confirmPlayer,
+  createMixinGame,
+  disconnectMixin,
+  fulfillCue,
+  interruptMixin,
+  reconnectMixin,
+  restartMixin,
+  revealHint,
+  castVote,
+  startMixin,
+  submitPlayerText,
+  tickMixin,
+  viewMixin,
+} from './mixin-game.mjs';
+import { createFileAssets, wavFromPcm } from './mixin-audio.mjs';
+import { isInjectedEcho } from './mixin-link.mjs';
+import { HOST_REVEAL_BRIDGE, scriptedDetect, warmupDetect } from './mixin-prompts.mjs';
+import { roleById, voiceOf } from './mixin-roles.mjs';
+
+const DEFAULT_TIMEOUT_MS = 100_000;
+
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label}超时（${ms}ms）`)), ms);
+    promise.then(value => { clearTimeout(timer); resolve(value); }, error => { clearTimeout(timer); reject(error); });
+  });
+}
+
+async function loadAssets(dir) {
+  try {
+    const manifest = JSON.parse(await readFile(path.join(dir, 'manifest.json'), 'utf8'));
+    return createFileAssets(dir, manifest);
+  } catch {
+    return { async find() { return null; }, async sfx() { return null; } };
+  }
+}
+
+function spokenLine(cue, live) {
+  const scripted = cue.kind === 'reveal' || String(cue.instruction ?? '').includes('【台词】');
+  if (scripted) return cue.line || cue.fallbackText;
+  const spoken = typeof live?.spoken === 'string' ? live.spoken.trim() : '';
+  if (!spoken || spoken.includes('【台词】') || spoken.includes('舞台指令') || isInjectedEcho(spoken, [cue.instruction])) {
+    return cue.fallbackText;
+  }
+  const cap = Number.isInteger(cue.maxChars) ? cue.maxChars : spoken.length;
+  return spoken.slice(0, cap);
+}
+
+export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  if (!lane) throw new Error('缺少语音通道');
+  const game = createMixinGame(options);
+  const hostVoiceId = voiceOf(roleById('host')).voiceId;
+  let now = Number.isInteger(options.now) ? options.now : 0;
+  let link = null;
+  const clips = new Map();
+
+  async function detectRetry(request) {
+    try {
+      return await withTimeout(link.detect(request), timeoutMs, '这一句');
+    } catch (error) {
+      if (error?.code !== 'CLOSED' || link.reconnects >= 1) throw error;
+      if (game.phase !== 'error') disconnectMixin(game, { generation: game.generation, now, reason: '连接断开' });
+      await link.reconnect();
+      if (game.phase === 'error') reconnectMixin(game, { generation: game.generation, now });
+      return withTimeout(link.detect(request), timeoutMs, '这一句');
+    }
+  }
+
+  async function speakLive({ text, voiceId, line, allowAsset }) {
+    if (allowAsset && audioDir) {
+      const pcm = await (await loadAssets(audioDir)).find({ voiceId, text: line });
+      if (pcm?.length) return { pcm, spoken: line, voiceId, via: 'presynth', aborted: false };
+    }
+    try {
+      const result = await detectRetry({ text, voiceId });
+      const aborted = result?.aborted === true;
+      const pcm = !aborted && result?.pcm?.length ? result.pcm : null;
+      return {
+        pcm,
+        spoken: aborted ? '' : (result?.spoken || '').trim(),
+        voiceId: pcm ? voiceId : null,
+        via: pcm ? 'live' : 'subtitle',
+        aborted,
+      };
+    } catch {
+      return { pcm: null, spoken: '', voiceId: null, via: 'subtitle', aborted: false };
+    }
+  }
+
+  async function speakCue(cue) {
+    const voiceId = cue.voice?.voiceId;
+    if (cue.kind === 'reveal') {
+      const bridge = await speakLive({
+        text: scriptedDetect('群主·零号', HOST_REVEAL_BRIDGE, cue.situation),
+        voiceId,
+        line: HOST_REVEAL_BRIDGE,
+        allowAsset: true,
+      });
+      if (game.cue?.cueId !== cue.cueId) return { aborted: true, pcm: null, text: cue.line, reveal: true };
+      const ending = await speakLive({
+        text: cue.instruction,
+        voiceId,
+        line: cue.line,
+        allowAsset: false,
+      });
+      const parts = [bridge.pcm, ending.pcm].filter(part => part?.length);
+      return {
+        aborted: game.cue?.cueId !== cue.cueId,
+        pcm: parts.length ? Buffer.concat(parts) : null,
+        text: cue.line || cue.fallbackText,
+        voiceId: parts.length ? voiceId : null,
+        reveal: true,
+      };
+    }
+    const scripted = String(cue.instruction ?? '').includes('【台词】');
+    const live = await speakLive({
+      text: cue.instruction,
+      voiceId,
+      line: scripted ? (cue.line || cue.fallbackText) : cue.fallbackText,
+      allowAsset: scripted,
+    });
+    if (game.cue?.cueId !== cue.cueId) return { aborted: true, pcm: null, text: cue.line || cue.fallbackText, reveal: false };
+    return {
+      aborted: false,
+      pcm: live.pcm,
+      text: spokenLine(cue, live),
+      voiceId: live.voiceId,
+      reveal: false,
+    };
+  }
+
+  function finish(cue, spoken) {
+    if (game.cue?.cueId !== cue.cueId) return { fulfilled: false, view: viewMixin(game) };
+    fulfillCue(game, {
+      generation: game.generation,
+      cueId: cue.cueId,
+      text: spoken.text,
+      now,
+      voiceUsed: spoken.voiceId,
+      via: 'speech',
+    });
+    if (game.phase === 'result') lane.releaseGame();
+    const clipWav = spoken.pcm?.length ? wavFromPcm(spoken.pcm) : null;
+    return { fulfilled: true, view: viewMixin(game), clipWav, reveal: spoken.reveal === true };
+  }
+
+  return {
+    game,
+    clips,
+    now: () => now,
+    setNow(value) { now = value; },
+    view() { return viewMixin(game); },
+    async start() {
+      if (!link) link = await lane.acquireForGame();
+      try { await detectRetry({ text: warmupDetect(), voiceId: hostVoiceId }); }
+      catch { /* 预热失败不挡住开局 */ }
+      if (game.phase === 'error') {
+        try { reconnectMixin(game, { generation: game.generation, now }); } catch { /* 开始时再报 */ }
+      }
+      return startMixin(game, { mode: 'live', helloOk: true, now, generation: game.generation });
+    },
+    async step() {
+      const cue = game.cue;
+      if (!cue) return { fulfilled: false, view: viewMixin(game) };
+      const spoken = await speakCue(cue);
+      if (spoken.aborted || game.cue?.cueId !== cue.cueId) return { fulfilled: false, view: viewMixin(game) };
+      return finish(cue, spoken);
+    },
+    say(text, extra = {}) {
+      return submitPlayerText(game, {
+        generation: game.generation,
+        text,
+        typed: extra.typed !== false,
+        durationMs: extra.durationMs ?? null,
+        silenceMs: extra.silenceMs ?? null,
+        now,
+      });
+    },
+    confirm(revision = game.pending?.revision) {
+      return confirmPlayer(game, { generation: game.generation, revision, now });
+    },
+    vote(seat) { return castVote(game, { generation: game.generation, seat, now }); },
+    interrupt(text) {
+      try { link?.abort(); } catch { /* 这一句已经说完 */ }
+      return interruptMixin(game, { generation: game.generation, text, now });
+    },
+    hint() { return revealHint(game, { generation: game.generation }); },
+    restart() { return restartMixin(game, { now }); },
+    tick(ms = 0) {
+      now += ms;
+      return tickMixin(game, now);
+    },
+    tickTo(value) {
+      now = value;
+      return tickMixin(game, now);
+    },
+  };
+}
