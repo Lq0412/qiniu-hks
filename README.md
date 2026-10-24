@@ -16,12 +16,18 @@ Node.js 24，执行 `npm ci`、`npm start`，打开 http://127.0.0.1:4173/ 。�
 
 - `npm run check`：语法检查。
 - `npm test`：规则、证据校验、音频资源、协议与HTTP测试。
-- `npm run test:rules`：规则分支覆盖率至少90%。
+- `npm run test:rules`：`game.mjs` 和 `mixin-game.mjs` 的分支覆盖率至少 90%。
 - `npm run test:coverage`：自有服务端行覆盖率至少80%。
+- `npm run sim`：离线跑完一局「谁是人类」。`npm run sim -- --stealth` 看潜伏成功。不申请麦克风，不连接灵矽。
 - `npm run smoke:linx`：六题真实平台链路测试，会使用平台额度；输入为合成文字，输出包含真实语音，不替代真人麦克风验收。
+
+## 谁是人类
+
+新玩法的服务端和文字模式见 [架构草案](docs/architecture.md)。旧版试玩入口不变。
 
 ## 文档
 
+- [谁是人类架构草案](docs/architecture.md)
 - [玩法与架构](docs/human-benchmark-design.md)
 - [概念与范围](docs/human-benchmark-concept.md)
 - [型号调研快照](docs/research/model-tier-snapshot-2026-10-24.md)
