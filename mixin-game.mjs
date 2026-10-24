@@ -244,7 +244,7 @@ export function interruptMixin(game, { generation, text, now = 0 }) {
   game.interrupts.push({ seat: aborted.seat, text: clean, at: now, round: game.round });
   game.playerLines.push(playerRow(game, { text: clean, kind: 'interrupt', typed: true, durationMs: null, silenceMs: null, usedHint: false, stall: null, keywords: [], quoted: '' }));
   pushDialogue(game, 5, game.playerAlias, clean, 'interrupt', now);
-  const rebuttal = makeCue(game, {
+  const rebuttal = cueFields(game, {
     kind: 'rebuttal',
     seat: aborted.seat,
     roleId: aborted.roleId,
