@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { judgeOutcome } from '../humanity.mjs';
-import { PLAYER_ALIASES } from '../mixin-roles.mjs';
+import { PLAYER_ALIASES, roleById } from '../mixin-roles.mjs';
 import {
   MixinError,
   TIMEOUTS,
@@ -604,3 +604,28 @@ test('settlement exposes humanity details and long catchphrases keep the vote au
     assert.match(row.text, vote.targetSeat === null ? /弃权/ : new RegExp('我投' + vote.targetSeat + '号'));
   }
 });
+
+for (const emoji of ['👨‍👩‍👧', '1️⃣']) {
+  test(`vote speech truncation preserves graphemes: ${emoji}`, async t => {
+    const session = demoSession();
+    await drive(session, caughtScript, 'defense');
+    const originals = session.game.seats.filter(seat => seat.roleId !== 'player').map(seat => {
+      const role = roleById(seat.roleId);
+      const original = role.catchphrases[0];
+      role.catchphrases[0] = '测'.repeat(14) + emoji.repeat(5);
+      return { role, original };
+    });
+    t.after(() => { for (const { role, original } of originals) role.catchphrases[0] = original; });
+    await drive(session);
+    const rows = session.game.lines.filter(row => row.kind === 'vote');
+    let checked = 0;
+    for (const row of rows) {
+      const vote = session.game.votePlan.votes.find(vote => vote.seat === row.seat);
+      if (vote.targetSeat === null) continue;
+      const expected = `我投${vote.targetSeat}号，` + '测'.repeat(14) + emoji;
+      assert.equal(row.text, expected);
+      checked++;
+    }
+    assert.ok(checked > 0);
+  });
+}
