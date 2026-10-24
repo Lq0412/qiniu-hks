@@ -38,12 +38,12 @@ test('Linx hello, MCP, transcript, audio forwarding and client controls',()=>{
   f.incoming({type:'mcp',payload:{id:1,method:'tools/list'}});
   f.incoming({type:'stt',text:'有依据'});f.incoming({type:'tts',state:'sentence_start',text:'请说'});
   assert.equal(f.game.turn,1);assert.equal(f.game.dialogue.length,2);
-  f.incoming({type:'mcp',payload:{id:2,method:'tools/call',params:{name:'self.game.review',arguments:{turn:1,delta:25,reason:'合理'}}}});
-  assert.equal(f.game.score,55);
+  f.incoming({type:'mcp',payload:{id:2,method:'tools/call',params:{name:'self.test.evaluate',arguments:{question:1,revision:1,quote:'依据',feedback:'合理'}}}});
+  assert.equal(f.game.feedback.text,'合理');
   f.upstream.emit('message',Buffer.alloc(640),true);assert.ok(f.client.sent.some(s=>s.options?.binary));
   f.client.emit('message',Buffer.alloc(640),true);
   for(const message of [{type:'listen',state:'start'},{type:'listen',state:'stop'},{type:'abort'},{type:'opening'},{type:'text',text:'你好'}])f.outgoing(message);
-  f.outgoing({type:'opening'});f.incoming({type:'stt',text:'下一位！号条呢？没有号条，我怎么知道你不是来插队的？'});assert.equal(f.game.turn,1);
+  f.outgoing({type:'opening'});f.incoming({type:'stt',text:'你刚进一个群，有人说：“明天老地方，懂的都懂。”你根本不知道老地方是哪。你会怎么回？'});assert.equal(f.game.turn,1);
   f.incoming('{');f.outgoing('{');
   assert.ok(f.client.sent.some(s=>typeof s.data==='string'&&JSON.parse(s.data).type==='error'));
   f.bridge.close();f.bridge.close();f.incoming({type:'stt',text:'旧消息'});assert.equal(f.game.turn,1);

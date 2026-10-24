@@ -1,11 +1,11 @@
 {
-  "name": "today-not-open",
+  "name": "human-model-benchmark",
   "version": "1.0.0",
   "description": "今日不办 · Linx语音办事闯关",
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "node --check server.mjs && node --check linx.mjs && node --check game.mjs && node --check public/app.js && node --check public/audio.js && node --check public/recorder.js",
+    "check": "node --check server.mjs && node --check linx.mjs && node --check benchmark.mjs && node --check game.mjs && node --check public/app.js && node --check public/audio.js && node --check public/recorder.js",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=*.mjs --test-coverage-lines=80 test/*.test.mjs",
     "test:rules": "node --test --experimental-test-coverage --test-coverage-include=game.mjs --test-coverage-branches=90 test/game.test.mjs",
     "smoke:linx": "node scripts/smoke-linx.mjs"
