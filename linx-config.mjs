@@ -12,10 +12,10 @@ export async function deviceConfig(path = new URL('./.linx-device.json', import.
   }
 }
 
-// 应用名和 elf 摘要先保持 counter-game。真机确认改名不影响设备绑定之前，不要改这两个默认值。
-// 试跑覆盖：LINX_APP_NAME、LINX_APP_ELF_SHA256，或设备配置里的 applicationName、elfSha256。
-const DEFAULT_APP_NAME = 'counter-game';
-const DEFAULT_APP_ELF_SHA256 = 'counter-game-local';
+// 真机已确认改成 who-is-human 不影响设备绑定。仍可用环境变量或设备配置覆盖。
+// LINX_APP_NAME、LINX_APP_ELF_SHA256，或设备配置里的 applicationName、elfSha256。
+const DEFAULT_APP_NAME = 'who-is-human';
+const DEFAULT_APP_ELF_SHA256 = 'who-is-human-local';
 
 function textOr(value, fallback) {
   if (typeof value !== 'string') return fallback;

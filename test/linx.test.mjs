@@ -25,11 +25,11 @@ test('device persistence, malformed config and OTA contract',async()=>{
   try {
     const path=join(dir,'device.json'),first=await deviceConfig(path);assert.match(first.deviceId,/^02(:[A-F0-9]{2}){5}$/);assert.deepEqual(await deviceConfig(path),first);
     await writeFile(path,'{');await assert.rejects(deviceConfig(path));
-    const data=await ota(first,async(url,options)=>{assert.match(url,/qiniuapi/);assert.equal(options.headers['Device-Id'],first.deviceId);assert.equal(options.headers['User-Agent'],'who-is-human/1.0.0');const body=JSON.parse(options.body);assert.equal(body.mac_address,first.deviceId);assert.deepEqual(body.application,{name:'counter-game',version:'1.0.0',elf_sha256:'counter-game-local'});return {ok:true,json:async()=>({activation:{code:'123456'}})};},{});assert.equal(data.activation.code,'123456');
+    const data=await ota(first,async(url,options)=>{assert.match(url,/qiniuapi/);assert.equal(options.headers['Device-Id'],first.deviceId);assert.equal(options.headers['User-Agent'],'who-is-human/1.0.0');const body=JSON.parse(options.body);assert.equal(body.mac_address,first.deviceId);assert.deepEqual(body.application,{name:'who-is-human',version:'1.0.0',elf_sha256:'who-is-human-local'});return {ok:true,json:async()=>({activation:{code:'123456'}})};},{});assert.equal(data.activation.code,'123456');
     await assert.rejects(ota(first,async()=>({ok:false,status:503})),/503/);
   } finally {await rm(dir,{recursive:true});}
 });
-test('OTA application name stays counter-game unless configured', async () => {
+test('OTA application name defaults to who-is-human and can be overridden', async () => {
   const config = { deviceId: '02:00:00:00:00:01', clientId: 'client' };
   const capture = async (env, extra = {}) => {
     let application;
@@ -39,16 +39,16 @@ test('OTA application name stays counter-game unless configured', async () => {
     }, env);
     return application;
   };
-  assert.deepEqual(await capture({}), { name: 'counter-game', version: '1.0.0', elf_sha256: 'counter-game-local' });
-  assert.deepEqual(await capture({ LINX_APP_NAME: '  ', LINX_APP_ELF_SHA256: '' }), { name: 'counter-game', version: '1.0.0', elf_sha256: 'counter-game-local' });
-  assert.deepEqual(await capture({ LINX_APP_NAME: '  who-is-human  ', LINX_APP_ELF_SHA256: 'who-is-human-local' }), { name: 'who-is-human', version: '1.0.0', elf_sha256: 'who-is-human-local' });
+  assert.deepEqual(await capture({}), { name: 'who-is-human', version: '1.0.0', elf_sha256: 'who-is-human-local' });
+  assert.deepEqual(await capture({ LINX_APP_NAME: '  ', LINX_APP_ELF_SHA256: '' }), { name: 'who-is-human', version: '1.0.0', elf_sha256: 'who-is-human-local' });
+  assert.deepEqual(await capture({ LINX_APP_NAME: '  trial-name  ', LINX_APP_ELF_SHA256: 'trial-elf' }), { name: 'trial-name', version: '1.0.0', elf_sha256: 'trial-elf' });
   const fromConfig = await capture({ LINX_APP_NAME: 'from-env', LINX_APP_ELF_SHA256: 'from-env' }, { applicationName: 'from-config', elfSha256: '  ' });
   assert.equal(fromConfig.name, 'from-config');
   assert.equal(fromConfig.elf_sha256, 'from-env');
   const ignored = await capture({ LINX_APP_NAME: 'from-env' }, { applicationName: 1, elfSha256: null });
   assert.equal(ignored.name, 'from-env');
-  assert.equal(ignored.elf_sha256, 'counter-game-local');
-  assert.deepEqual(otaApplication({}, {}), { name: 'counter-game', version: '1.0.0', elf_sha256: 'counter-game-local' });
+  assert.equal(ignored.elf_sha256, 'who-is-human-local');
+  assert.deepEqual(otaApplication({}, {}), { name: 'who-is-human', version: '1.0.0', elf_sha256: 'who-is-human-local' });
 });
 test('Linx hello, MCP, transcript, audio forwarding and client controls',()=>{
   const f=fixture();
