@@ -225,8 +225,8 @@ export function clampScore(score) {
   return Math.max(0, Math.min(100, 100 - score * 10));
 }
 
-// 简单档「0 或 1 票」、地狱档没被识破时投几票、1 票并列算不算赢，设计稿和 ADR-004 都没写死。
-// 下面的数字只供本步单测和文字模拟复现，PR 里记为建议新增 ADR，不当成已决口径。
+// ADR-007（#18）：简单档 ≥5 给 2 票，3–4 分给 1 票，低于 3 分给 0 票；
+// 普通档识破 3 票、否则 1 票；地狱档识破 4 票、否则 0 票。
 export function votesOnPlayer(score, difficulty) {
   const spec = DIFFICULTY[difficulty];
   if (!spec) throw new Error(`未知难度 ${difficulty}`);
@@ -271,6 +271,8 @@ export function planVotes({ seats, score, difficulty, playerVote = null }) {
   return { votes, tally, onPlayer, playerVote, scapegoatSeat: goat.seat };
 }
 
+// ADR-007（#18）：5 号的 AI 票 ≥2 且为最高（并列最高也算）才是被识破，否则潜伏成功。
+// 甩锅大师只在潜伏成功，且玩家投中的座位是 AI 票里严格第二高。0 票不算第二。
 export function judgeOutcome({ tally, playerVote = null }) {
   const playerVotes = tally[5] ?? 0;
   const seats = Object.keys(tally).map(Number);

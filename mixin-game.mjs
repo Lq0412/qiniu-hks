@@ -543,6 +543,7 @@ function announce(game, now) {
   arm(game, cues, now, Math.max(1000, deadline - now));
 }
 
+// ADR-007：胜负在服务端写死。票型来自 humanity.planVotes，这里只记账，模型不能改。
 function ensurePlan(game) {
   if (game.votePlan) return;
   refreshHuman(game);
