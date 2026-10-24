@@ -114,8 +114,9 @@ test('等待排空的句子被取消后不会迟发，关闭会清除排空', as
   const first = assert.rejects(f.detect('第一句'), { code: 'CANCELLED' });
   f.link.cancelTurn();
   await first;
-  const second = assert.rejects(f.detect('第二句'), { code: 'CANCELLED' });
-  f.link.cancelTurn();
+  const pending = f.detect('第二句');
+  const second = assert.rejects(pending, { code: 'CANCELLED' });
+  f.link.cancelTurn(pending.seq);
   await second;
   const third = assert.rejects(f.detect('第三句'), { code: 'CLOSED' });
   f.socket.close();
@@ -137,5 +138,28 @@ test('重连清除旧排空，不阻塞新连接的下一句', async () => {
     f.audio([4, 5]);
     f.stop();
     assert.deepEqual((await next).pcm, Buffer.from([4, 5]));
+  } finally { f.link.close(); }
+});
+
+test('按序号取消排队 A 不影响 B，无当前句时无参数取消不动队列', async () => {
+  const f = await fakeLink(500);
+  try {
+    const old = f.detect('旧轮');
+    f.link.abort();
+    assert.equal((await old).aborted, true);
+    const a = f.detect('A');
+    const b = f.detect('B');
+    const rejected = assert.rejects(a, { code: 'CANCELLED' });
+    f.link.cancelTurn(a.seq);
+    f.link.cancelTurn();
+    await rejected;
+    f.audio([9]);
+    await sleep(30);
+    assert.equal(f.detects.length, 1);
+    f.stop();
+    assert.equal(f.detects.at(-1).text, 'B');
+    f.audio([1, 2]);
+    f.stop();
+    assert.deepEqual((await b).pcm, Buffer.from([1, 2]));
   } finally { f.link.close(); }
 });

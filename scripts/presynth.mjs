@@ -84,11 +84,12 @@ export async function runPresynth({
         try { await access(path.join(dir, old.file)); continue; }
         catch { /* 文件丢失则补合成 */ }
       }
+      const pending = link.detect({ text: scriptedDetect('群主·零号', item.text, '预合成。'), voiceId });
       const result = await withTimeout(
-        link.detect({ text: scriptedDetect('群主·零号', item.text, '预合成。'), voiceId }),
+        pending,
         timeoutMs,
         `${item.id}这一句`,
-        () => link.cancelTurn(),
+        () => link.cancelTurn(pending.seq),
       );
       if (shouldStop()) { stopped = true; break; }
       if (!result.pcm?.length) throw new Error(`这一句没有收到音频：${item.id}`);

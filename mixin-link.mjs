@@ -69,7 +69,7 @@ export function createMixinLink({
   createSocket = (url, options) => new WebSocket(url, options),
   helloBrief = HELLO_BRIEF,
   handshakeMs = 20000,
-  settleMs = 400,
+  settleMs = 3000,
 } = {}) {
   if (!config?.deviceId || !config?.clientId || !credentials?.url || !credentials?.token) throw new Error('缺少灵矽连接参数。');
   const secrets = [credentials.token, config.deviceId, config.clientId];
@@ -114,7 +114,7 @@ export function createMixinLink({
     if (draining || turn || !queued.length) return;
     turn = queued.shift();
     injected.push(turn.text);
-    try { sendJson(turn.message); }
+    try { turn.onSent?.(); sendJson(turn.message); }
     catch (error) { failTurn(error); }
   }
 
@@ -259,24 +259,28 @@ export function createMixinLink({
       try { old?.close(); } catch { /* 旧连接已经断了 */ }
       await open();
     },
-    detect({ text, voiceId }) {
+    detect({ text, voiceId, onSent }) {
       if (turn) throw new Error('上一段还没说完');
       const message = buildMixinDetect({ text, voiceId });
       if (Object.hasOwn(message, 'agent_params') && message.agent_params.custom_replace_prompt) throw new Error('listen 不能携带 custom_replace_prompt');
-      return new Promise((resolve, reject) => {
-        queued.push({ seq: ++seq, text, message, spoken: [], pcm: [], frames: [], aborted: false, resolve, reject });
+      const id = ++seq;
+      const promise = new Promise((resolve, reject) => {
+        queued.push({ seq: id, text, message, onSent, spoken: [], pcm: [], frames: [], aborted: false, resolve, reject });
         startQueued();
       });
+      promise.seq = id;
+      return promise;
     },
-    cancelTurn() {
-      const current = turn;
-      turn = null;
+    cancelTurn(id) {
       const cancelled = Object.assign(new Error('这一句已取消'), { code: 'CANCELLED' });
-      if (!current) {
-        // 等待排空也算本句的等待时间，超时后不能再把它发出去。
-        queued.shift()?.reject(cancelled);
+      if (id !== undefined && turn?.seq !== id) {
+        const index = queued.findIndex(item => item.seq === id);
+        if (index >= 0) queued.splice(index, 1)[0].reject(cancelled);
         return;
       }
+      const current = turn;
+      if (!current) return;
+      turn = null;
       current.reject(cancelled);
       clearDrain();
       draining = { seq: current.seq, timer: setTimeout(finishDrain, settleMs) };
@@ -284,9 +288,15 @@ export function createMixinLink({
       catch { /* 断线时发不出去 */ }
     },
     abort() {
-      if (turn) turn.aborted = true;
+      const current = turn;
+      if (!current) return;
+      // 打断立即归还调用者，旧轮帧继续排空，不能交给下一句。
+      turn = null;
+      current.resolve({ aborted: true, spoken: '', pcm: Buffer.alloc(0), frames: [], format });
+      clearDrain();
+      draining = { seq: current.seq, timer: setTimeout(finishDrain, settleMs) };
       try { sendJson({ type: 'abort', reason: 'wake_word_detected' }); }
-      catch { /* 断线时由 close 结束这一轮 */ }
+      catch { /* 断线时由 close 清理排空 */ }
     },
     listen(state) { sendJson({ type: 'listen', state, mode: 'manual' }); },
     sendAudio(chunk) {
