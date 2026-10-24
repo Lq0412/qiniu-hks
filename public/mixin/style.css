@@ -9,7 +9,7 @@
   --live: #ff4d6a;
   --gold: #ffc857;
   --cyan: #7dd3fc;
-  font-family: "Avenir Next", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  font-family: "Avenir Next", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -119,7 +119,7 @@ legend { font-size: 12px; letter-spacing: 0.18em; color: var(--muted); margin-bo
   max-height: 100dvh;
   overflow: hidden;
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
   gap: 10px;
   padding: 14px 28px 16px;
 }
@@ -213,14 +213,16 @@ legend { font-size: 12px; letter-spacing: 0.18em; color: var(--muted); margin-bo
 .example { margin: 0; padding: 10px 12px; border-left: 3px solid var(--gold); color: var(--gold); font-size: 16px; }
 
 .reveal-screen {
-  min-height: 100dvh;
-  padding: 42px 8vw 56px;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: auto;
+  padding: 28px 8vw 20px;
   display: grid;
-  align-content: center;
+  align-content: start;
   gap: 8px;
   max-width: 1080px;
 }
-.reveal-screen h1 { font-size: clamp(52px, 6.4vw, 92px); margin-top: 8px; }
+.reveal-screen h1 { font-size: clamp(44px, 6vw, 84px); margin-top: 4px; }
 .outcome { margin: 8px 0 0; font-size: 18px; letter-spacing: 0.18em; }
 .outcome.good { color: #7dffa1; }
 .outcome.bad { color: #ff8b7a; }
@@ -239,7 +241,17 @@ legend { font-size: 12px; letter-spacing: 0.18em; color: var(--muted); margin-bo
 .quote small { display: block; margin-bottom: 6px; letter-spacing: 0.16em; font-size: 12px; color: #8a8175; }
 .ending { margin: 18px 0 0; font-size: clamp(22px, 2.4vw, 32px); line-height: 1.45; }
 .roast, .meta-line { margin: 8px 0 0; color: var(--muted); }
-.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+.actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 16px 0 6px;
+  background: linear-gradient(to bottom, transparent, var(--bg) 32%);
+  z-index: 2;
+}
 
 .error-screen { min-height: 100dvh; display: grid; align-content: center; gap: 12px; padding: 8vh 8vw; max-width: 760px; }
 .error-screen p { font-size: 22px; line-height: 1.5; }
@@ -260,21 +272,76 @@ legend { font-size: 12px; letter-spacing: 0.18em; color: var(--muted); margin-bo
 #toast[hidden] { display: none; }
 
 @media (max-height: 860px) {
+  .lobby { align-items: start; padding: 18px 36px 20px; gap: 24px; overflow: auto; }
+  .lobby h1 { font-size: 72px; }
+  .tagline { margin-top: 8px; font-size: 20px; }
+  .rules { margin-top: 14px; gap: 6px; }
+  .scene, .diff { padding: 8px 12px; }
   .table-screen { gap: 8px; padding: 10px 20px 12px; }
-  .seat { min-height: 64px; padding: 8px 12px; }
+  .seat { min-height: 58px; padding: 8px 12px; }
   .seat strong { font-size: 18px; margin-top: 2px; }
-  .topic { padding: 10px 16px; }
-  .topic h2 { font-size: clamp(20px, 2.4vw, 30px); }
-  .subtitle.short { font-size: clamp(28px, 3.6vw, 44px); }
-  .count { font-size: 32px; }
+  .topic { padding: 8px 14px 10px; }
+  .topic h2 { font-size: clamp(18px, 2.2vw, 28px); max-height: 3.9em; overflow: auto; }
+  .subtitle.short { font-size: clamp(26px, 3.2vw, 40px); }
+  .count { font-size: 28px; }
+  .reveal-screen { padding: 14px 48px 10px; gap: 4px; }
+  .reveal-screen h1 { font-size: 42px; }
+  .score-row strong { font-size: 56px; }
+  .quote { margin-top: 8px; padding: 10px 14px; font-size: 18px; }
+  .ending { margin-top: 8px; font-size: 18px; }
 }
 
 @media (max-width: 980px) {
-  .lobby { grid-template-columns: 1fr; padding: 28px 20px 40px; gap: 28px; }
-  h1 { font-size: 64px; }
-  .table-screen { height: auto; min-height: 100dvh; padding: 16px; }
-  .seats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lobby {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 12px;
+    padding: 12px 14px 16px;
+    overflow: auto;
+  }
+  .lobby h1 { font-size: 36px; }
+  .tagline { font-size: 15px; margin-top: 4px; }
+  .rules { margin-top: 8px; gap: 4px; }
+  .rules li { font-size: 13px; line-height: 1.4; }
+  .cast-line { margin-top: 8px; font-size: 13px; }
+  .setup { gap: 10px; }
+  .scenes { gap: 6px; }
+  .scene small { font-size: 12px; line-height: 1.35; }
+  .primary.big { position: static; min-height: 46px; width: 100%; box-shadow: none; }
+  .top, .host { flex-wrap: wrap; gap: 4px 10px; }
+  .brand { font-size: 18px; }
+  .table-screen {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+    gap: 6px;
+    padding: 8px 10px 10px;
+  }
+  .seats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .seat { min-height: 0; padding: 4px 8px 6px; }
+  .seat strong { font-size: 15px; margin-top: 0; }
+  .seat em { display: none; }
+  .seat.you em { display: block; }
+  .seat-no { font-size: 10px; letter-spacing: 0.08em; }
   .seat:last-child { grid-column: 1 / -1; }
+  .topic { padding: 8px 10px; }
+  .topic h2 { font-size: 18px; max-height: 4.2em; overflow: auto; }
+  .subtitle.short { font-size: 22px; }
+  .subtitle.medium { font-size: 18px; }
+  .subtitle.long { font-size: 15px; }
+  .lower { gap: 4px; }
+  .count { font-size: 22px; }
+  .line input { font-size: 16px; padding: 6px 0; }
+  .dock { gap: 4px; }
+  .chips { flex-wrap: nowrap; overflow-x: auto; }
+  .chips button { flex: none; }
+  .chips button, .seat-vote, .hold, .ghost { padding: 8px 10px; }
+  .reveal-screen { padding: 14px 14px 8px; }
+  .reveal-screen h1 { font-size: 34px; }
+  .score-row { gap: 12px; }
+  .score-row strong { font-size: 48px; }
+  .actions { display: grid; grid-template-columns: 1fr; }
+  .actions button { width: 100%; min-height: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
