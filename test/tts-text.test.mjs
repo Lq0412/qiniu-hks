@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sanitizeForTts } from '../tts-text.mjs';
+import { sanitizeForTts, restoreDisplayNames, displayModelText } from '../tts-text.mjs';
 import { normalizeEcho, isStageEcho } from '../mixin-game.mjs';
 import { isInjectedEcho } from '../mixin-link.mjs';
 import { scriptedDetect } from '../mixin-prompts.mjs';
@@ -15,7 +15,7 @@ test('sanitizeForTts converts keycaps and circled list numbers', () => {
 });
 
 test('sanitizeForTts preserves ordinary Chinese and empty text', () => {
-  assert.equal(sanitizeForTts('普通中文，第1题：你好。\n下一行 123 #*'), '普通中文，第1题：你好。\n下一行 123 #*');
+  assert.equal(sanitizeForTts('普通中文，第1题：你好。\n下一行 123 #*'), '普通中文，第1题：你好。下一行 123 #*');
   assert.equal(sanitizeForTts(''), '');
 });
 
@@ -36,4 +36,17 @@ test('TTS names and seat numbers share echo normalization, leaving display input
   assert.equal(isInjectedEcho(display, [scriptedDetect('GPT', spoken)]), true);
   assert.equal(normalizeEcho(display), normalizeEcho(spoken));
   assert.equal(sanitizeForTts('1号、10号、25号、99号；100号、3.5号、123'), '一号、十号、二十五号、九十九号；100号、3.5号、123');
+});
+
+
+test('display names reverse the shared pronunciation table and protect player quotes', () => {
+  const spoken = '我是克劳德，科瑟和深度求索😊';
+  assert.equal(restoreDisplayNames(spoken), '我是Claude，Cursor和DeepSeek😊');
+  assert.equal(sanitizeForTts(restoreDisplayNames(spoken)), sanitizeForTts(spoken));
+  assert.equal(displayModelText('克劳德说「我喜欢科瑟」', ['我喜欢科瑟']), 'Claude说「我喜欢科瑟」');
+});
+
+test('sanitizeForTts collapses whitespace left by emoji and around Chinese punctuation', () => {
+  assert.equal(sanitizeForTts('  拆成三步 😊，  然后  继续\n。  '), '拆成三步，然后 继续。');
+  assert.equal(sanitizeForTts('拆成三步 😊，'), '拆成三步，');
 });
