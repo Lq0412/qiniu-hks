@@ -147,6 +147,14 @@ test('generation rejects a stale connection on every mutation', () => {
   assert.equal(game.generation, 1);
 });
 
+test('revealHint rejects a disconnected game before the phase check', () => {
+  const session = demoSession();
+  session.start();
+  const generation = session.game.generation;
+  disconnectMixin(session.game, { generation });
+  assert.throws(() => revealHint(session.game, { generation }), /连接已断开/);
+});
+
 test('stage echo can be overridden, and opening text is not a player line', () => {
   assert.equal(assertVerbatim(' 原话 ', ['这是原话']), '原话');
   assert.throws(() => assertVerbatim('   ', ['原话']), /不能为空/);

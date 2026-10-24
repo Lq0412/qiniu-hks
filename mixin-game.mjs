@@ -265,6 +265,7 @@ export function confirmPlayer(game, { generation, revision, now = 0 }) {
 
 export function revealHint(game, { generation }) {
   assertGen(game, generation);
+  assertPlayable(game);
   if (game.phase !== 'round_player') return { accepted: false, reason: 'phase', example: null, view: viewMixin(game) };
   game.hintReleased = true;
   game.hintTaken = true;
