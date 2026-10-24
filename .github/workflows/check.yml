@@ -13,7 +13,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
-      - name: game.mjs branch coverage gate (>=90%)
+      - name: Branch coverage gates (game.mjs, mixin-game.mjs, humanity.mjs, >=90%)
         run: npm run test:rules 2>&1 | tee rules.txt
       - name: Full test suite with line coverage gate (>=80%)
         run: npm run test:coverage 2>&1 | tee coverage.txt
@@ -28,7 +28,7 @@ jobs:
             sed -n -E '/tests +[0-9]+$/,/end of coverage report/p' coverage.txt
             echo '```'
             echo ''
-            echo '### game.mjs 分支覆盖门禁（npm run test:rules，≥90%）'
+            echo '### 分支覆盖门禁（npm run test:rules，game.mjs、mixin-game.mjs、humanity.mjs ≥90%）'
             echo '```'
             sed -n -E '/tests +[0-9]+$/,/end of coverage report/p' rules.txt
             echo '```'
