@@ -5,11 +5,13 @@ import { WebSocketServer } from 'ws';
 import { deviceConfig, ota } from './linx-config.mjs';
 import { createGame, advance, view } from './game.mjs';
 import { connectLinx } from './linx.mjs';
+import { createMixinHub } from './mixin-http.mjs';
 
 const assets = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/audio.js': ['audio.js', 'text/javascript'], '/recorder.js': ['recorder.js', 'text/javascript'] };
 
 export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice = connectLinx } = {}) {
   const sessions = new Map();
+  const mixin = createMixinHub();
   let active = null;
   const sidOf = req => /(?:^|;\s*)counter=([a-f0-9-]+)/.exec(req.headers.cookie ?? '')?.[1];
   const server = http.createServer(async (req, res) => {
@@ -24,6 +26,16 @@ export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice =
         return res.end(data);
       }
       if (path === '/api/health' && req.method === 'GET') return json(200, { ok: true, provider: 'Linx' });
+      if (path === '/api/mixin' || path.startsWith('/api/mixin/')) {
+        if (req.method === 'POST' && req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) return json(403, { error: '请求来源不合法。' });
+        if (req.method !== 'GET' && req.method !== 'POST') return json(404, { error: '未找到接口。' });
+        let body = '';
+        if (req.method === 'POST') {
+          for await (const chunk of req) { body += chunk; if (body.length > 20000) throw new Error('请求内容过大。'); }
+        }
+        const result = await mixin.dispatch({ method: req.method, path, body: body ? JSON.parse(body) : {} });
+        return json(result.status, result.payload, result.headers ?? {});
+      }
       let sid = sidOf(req);
       let session = sessions.get(sid);
       for (const [key, s] of sessions) if (Date.now() - s.updated > 60 * 60 * 1000 && s !== active?.session) sessions.delete(key);
