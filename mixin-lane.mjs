@@ -7,9 +7,9 @@ export function createAudioLane({ openLink, dir, log = () => {}, timeoutMs = 100
   if (typeof openLink !== 'function') throw new Error('缺少连接入口');
   let link = null;
   let mode = 'idle';
-  let cancel = false;
+  let generation = 0;
+  let running = false;
   let finished = Promise.resolve();
-  let markFinished = () => {};
   let connecting = null;
 
   async function ensure() {
@@ -27,7 +27,9 @@ export function createAudioLane({ openLink, dir, log = () => {}, timeoutMs = 100
 
   async function pump() {
     mode = 'presynth';
-    cancel = false;
+    const mine = ++generation;
+    running = true;
+    let markFinished;
     finished = new Promise(resolve => { markFinished = resolve; });
     try {
       const current = await ensure();
@@ -37,12 +39,13 @@ export function createAudioLane({ openLink, dir, log = () => {}, timeoutMs = 100
         log,
         timeoutMs,
         catalog,
-        shouldStop: () => cancel,
+        shouldStop: () => mine !== generation,
       });
     } catch (error) {
-      if (!cancel) log(typeof error?.message === 'string' && error.message ? error.message : '预合成失败');
+      if (mine === generation) log(typeof error?.message === 'string' && error.message ? error.message : '预合成失败');
     } finally {
-      if (mode === 'presynth') mode = 'idle';
+      running = false;
+      if (mine === generation && mode === 'presynth') mode = 'idle';
       markFinished();
     }
   }
@@ -51,20 +54,17 @@ export function createAudioLane({ openLink, dir, log = () => {}, timeoutMs = 100
     get mode() { return mode; },
     warmupBackground() {
       if (mode !== 'idle') return finished;
+      if (running) {
+        const previous = finished;
+        return previous.then(() => this.warmupBackground());
+      }
       void pump();
       return finished;
     },
     async acquireForGame() {
       if (mode === 'presynth') {
-        cancel = true;
+        generation += 1;
         try { link?.abort(); } catch { /* 还没连上 */ }
-        let timer;
-        const limit = new Promise(resolve => { timer = setTimeout(resolve, 3000); });
-        await Promise.race([finished, limit]);
-        clearTimeout(timer);
-        if (mode === 'presynth') {
-          try { link?.cancelTurn(); } catch { /* 还没连上，或这一句已经结束 */ }
-        }
       }
       mode = 'game';
       return ensure();
@@ -75,7 +75,7 @@ export function createAudioLane({ openLink, dir, log = () => {}, timeoutMs = 100
       this.warmupBackground();
     },
     close() {
-      cancel = true;
+      generation += 1;
       try { link?.abort(); } catch { /* 还没连上 */ }
       try { link?.close(); } catch { /* 已经关闭 */ }
     },
