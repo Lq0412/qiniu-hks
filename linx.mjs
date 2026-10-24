@@ -21,7 +21,7 @@ export function mcpReply(payload,game,stage) {
       else if(payload.params?.name==='self.test.report')result=saveReport(game,stage,payload.params.arguments?.report_json);
       else return {...reply,error:{code:-32601,message:'未知工具'}};
       return {...reply,result:{content:[{type:'text',text:JSON.stringify({...result,instruction:result.status==='done'?'报告已保存，只用两句话公布型号和评级。':brief(game.stage,game)})}],isError:false}};
-    }catch(error){return {...reply,result:{content:[{type:'text',text:error.message}],isError:true}};}
+    }catch(error){return {...reply,result:{content:[{type:'text',text:JSON.stringify({error:error.message,state:view(game),instruction:brief(game.stage,game)})}],isError:true}};}
   }
   return {...reply,error:{code:-32601,message:'未知方法'}};
 }
@@ -67,7 +67,10 @@ export function connectLinx({ config, credentials, game, client, onClose, create
     }
     if (message.type === 'mcp' && message.payload?.id !== undefined) {
       const reply = mcpReply(message.payload, game, stage);
-      if (reply.result?.isError) emit({type:'error',message:reply.result.content[0].text});
+      if (reply.result?.isError) {
+        const feedback = message.payload.params?.name === 'self.test.evaluate';
+        emit({type:feedback?'feedback_error':'error',message:feedback?'这次反馈未能保存。可以重答，或点击重试反馈。':'报告尚未保存，测试员正在修正；也可以断开后重试。'});
+      }
       send({ type: 'mcp', payload: reply });
       if(message.payload.method === 'tools/list') { toolsReady = true; for(const input of pendingInputs.splice(0))send(input); }
       emit({ type: 'game', game: view(game) });
