@@ -245,3 +245,94 @@ test('对局结束续预合成只补剩余句，再开局仍用同一连接', as
     assert.equal(manifest.lines.filter(item => item.kind === 'tts').length, 3);
   } finally { lane.close(); await rm(dir, { recursive: true, force: true }); }
 });
+
+test('多人同时开局仅一局使用语音，其他局自动文字且不会释放占用者的通道', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'lane-multi-'));
+  const link = controllableLink();
+  let detects = 0;
+  link.detect = async () => { detects++; return { pcm: Buffer.alloc(640, 1), spoken: '测试台词' }; };
+  const server = createApp({
+    audioDir: dir, presynthCatalog: [], log() {},
+    mixinCredentials: { config: { deviceId: 'fake-device', clientId: 'fake-client' }, credentials: { url: 'wss://fake.invalid', token: 'fake-token' } },
+    openAudioLink: () => link,
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const post = async (path, body = {}, cookie = '') => {
+    const response = await fetch(base + path, { method: 'POST', headers: { origin: base, 'content-type': 'application/json', cookie }, body: JSON.stringify(body) });
+    return { response, data: await response.json() };
+  };
+  const create = async () => {
+    const { response, data } = await post('/api/mixin', { sceneId: 'annual', seed: 1 });
+    assert.equal(response.status, 201);
+    return { id: data.id, cookie: response.headers.get('set-cookie').split(';')[0] };
+  };
+  const act = (session, action, body) => post(`/api/mixin/${session.id}/${action}`, body, session.cookie);
+  try {
+    await waitFor(() => server.audioLane.mode === 'idle');
+    const sessions = await Promise.all([create(), create(), create()]);
+    assert.equal(server.audioLane.mode, 'idle');
+    const started = await Promise.all(sessions.slice(0, 2).map(session => act(session, 'start')));
+    assert.ok(started.every(item => item.response.status === 200));
+    assert.deepEqual(started.map(item => item.data.game.mode).sort(), ['live', 'text']);
+    const voice = sessions[started.findIndex(item => item.data.game.mode === 'live')];
+    const text = sessions[started.findIndex(item => item.data.game.mode === 'text')];
+    const textStart = started.find(item => item.data.game.mode === 'text');
+    assert.match(textStart.data.notice, /自动切换为纯文字/);
+    assert.equal(server.audioLane.mode, 'game');
+    const beforeDetects = detects, beforeAborts = link.aborts;
+    const step = await act(text, 'step');
+    assert.equal(step.data.game.mode, 'text');
+    assert.equal(step.data.audioUrl, undefined);
+    assert.equal(detects, beforeDetects);
+    const record = await act(text, 'transcribe', { pcm: 'fake' });
+    assert.equal(record.response.status, 409);
+    await act(text, 'exit');
+    assert.equal(link.aborts, beforeAborts);
+    assert.equal(server.audioLane.mode, 'game');
+    const repeated = await act(voice, 'start');
+    assert.equal(repeated.response.status, 409);
+    await act(voice, 'exit');
+    await waitFor(() => server.audioLane.mode === 'idle');
+    const next = await act(sessions[2], 'start');
+    assert.equal(next.data.game.mode, 'live');
+    assert.equal(next.data.notice, undefined);
+    await act(sessions[2], 'exit');
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    await server.audioLane.warmupBackground();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('连接建立期间也保留占用，不能给另一局分配同一通道', async () => {
+  let connected;
+  const link = controllableLink();
+  link.connect = () => new Promise(resolve => { connected = resolve; });
+  const lane = createAudioLane({ openLink: () => link, catalog: [], log() {} });
+  const first = lane.acquireForGame();
+  await waitFor(() => connected);
+  await assert.rejects(lane.acquireForGame(), /其他对局占用/);
+  assert.equal(lane.mode, 'game');
+  connected();
+  assert.equal(await first, link);
+  lane.close();
+});
+
+test('开局连接失败后释放占用，后续对局仍可获得语音通道', async () => {
+  let attempts = 0;
+  const link = controllableLink();
+  link.connect = async () => {
+    attempts++;
+    if (attempts === 1) throw new Error('模拟连接失败');
+  };
+  const lane = createAudioLane({ openLink: () => link, catalog: [], log() {} });
+  try {
+    await assert.rejects(lane.acquireForGame(), /模拟连接失败/);
+    await lane.warmupBackground();
+    assert.equal(lane.mode, 'idle');
+    assert.equal(await lane.acquireForGame(), link);
+    assert.equal(lane.mode, 'game');
+    assert.equal(attempts, 2);
+  } finally { lane.close(); }
+});

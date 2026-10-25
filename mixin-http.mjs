@@ -7,7 +7,7 @@ import { createTextSession } from './mixin-session.mjs';
 const CREATE_FIELDS = new Set(['demo', 'difficulty', 'seed', 'sceneId', 'cardIds', 'roleIds', 'alias']);
 const SESSION_TTL_MS = 60 * 60 * 1000;
 
-export function createMixinHub({ now = Date.now, ttlMs = SESSION_TTL_MS, createSession = createTextSession } = {}) {
+export function createMixinHub({ now = Date.now, ttlMs = SESSION_TTL_MS, createSession = createTextSession, selectSession = session => session } = {}) {
   const sessions = new Map();
   const sweep = () => {
     const clock = now();
@@ -42,7 +42,17 @@ export function createMixinHub({ now = Date.now, ttlMs = SESSION_TTL_MS, createS
           if (!session.transcribe) return { status: 409, payload: { error: '当前是文字模式，请启动语音版后使用麦克风。' } };
           return done(session, await session.transcribe(body), match[1]);
         }
-        if (action === 'start') return done(session, await session.start(), match[1]);
+        if (action === 'start') {
+          if (session.starting) throw new MixinError('正在开局，请稍候。');
+          if (session.game.phase !== 'lobby') throw new MixinError('这一局已经开始了。');
+          const selected = selectSession(session);
+          selected.updated = session.updated;
+          selected.starting = true;
+          sessions.set(match[1], selected);
+          try {
+            return done(selected, { ...await selected.start(), notice: selected.notice }, match[1]);
+          } finally { selected.starting = false; }
+        }
         if (action === 'text') return done(session, session.say(body.text, body), match[1]);
         if (action === 'confirm') return done(session, session.confirm(body.revision), match[1]);
         if (action === 'vote') return done(session, session.vote(body.skip === true ? null : body.seat), match[1]);

@@ -198,6 +198,7 @@ async function call(action, body, options) {
   // 返回的 cue 已是下一句；当前音频对应刚写入 dialogue 的台词。
   state.speech = url ? payload.game.dialogue.at(-1) : null;
   adopt(payload.game, options);
+  if (payload.notice) toast(payload.notice);
   if (url) {
     try {
       await play(url, speechPlay(cue));
@@ -798,7 +799,7 @@ function paintTable() {
   const phase = document.querySelector('#phase');
   if (phase) phase.textContent = phaseLabel(game);
   const live = document.querySelector('#live');
-  if (live) live.textContent = `● REC · ${difficultyName(game.difficulty)}`;
+  if (live) live.textContent = `${game.mode === 'text' ? '纯文字' : '● REC'} · ${difficultyName(game.difficulty)}`;
   if (state.lastPhase !== game.phase) {
     const previous = state.lastPhase;
     state.lastPhase = game.phase;
