@@ -25,6 +25,7 @@ import {
   sanitizeView,
   screenOf,
   sessionRecord,
+  sessionUnavailable,
   shareCardModel,
   speechPlay,
   paintShareCard,
@@ -33,7 +34,7 @@ import {
   tableSeats,
   topicModel,
 } from './logic.js';
-import { play, playThinking, stop, stopHoldToTalk, stopThinking, startHoldToTalk } from './audio.js';
+import { pausePlayback, resumePlayback, play, playThinking, stop, stopHoldToTalk, stopThinking, startHoldToTalk } from './audio.js';
 
 const app = document.querySelector('#app');
 const toastEl = document.querySelector('#toast');
@@ -50,6 +51,7 @@ const state = {
   screen: '',
   dealtKey: '',
   thinking: false,
+  speech: null,
   holdRead: false,
   previousKind: '',
   previousText: '',
@@ -58,6 +60,13 @@ const state = {
   difficulty: 'normal',
   draft: '',
   holding: false,
+  inputBusy: false,
+  voiceDraft: null,
+  paused: false,
+  pausedElapsed: 0,
+  menu: null,
+  expired: false,
+  exiting: false,
   sending: false,
   faults: 0,
   mismatch: false,
@@ -103,6 +112,14 @@ function clearStored() {
   state.sessionId = null;
   state.clock = 0;
   state.game = null;
+  state.speech = null;
+  state.voiceDraft = null;
+  state.paused = false;
+  state.pausedElapsed = 0;
+  state.menu = null;
+  state.expired = false;
+  state.inputBusy = false;
+  state.holding = false;
   state.dealtKey = '';
   sessionStorage.removeItem(STORE);
 }
@@ -128,6 +145,7 @@ function toast(message) {
 function adopt(game, { clockDelta = 0 } = {}) {
   state.clock += clockDelta;
   state.syncedAt = performance.now();
+  if (state.paused) state.pausedElapsed = 0;
   const next = sanitizeView(game);
   const last = next?.dialogue?.at(-1);
   if (last) {
@@ -165,16 +183,39 @@ async function request(path, { method = 'GET', body } = {}) {
 }
 
 async function call(action, body, options) {
+  const sessionId = state.sessionId;
   const cue = state.game?.cue;
-  const payload = await request(`/api/mixin/${state.sessionId}/${action}`, { method: 'POST', body });
+  let payload;
+  try { payload = await request(`/api/mixin/${sessionId}/${action}`, { method: 'POST', body }); }
+  catch (error) {
+    if (sessionId !== state.sessionId || state.exiting) return { accepted: false };
+    throw error;
+  }
+  if (sessionId !== state.sessionId || state.exiting) return payload;
   state.faults = 0;
-  adopt(payload.game, options);
   const url = clipUrl(payload);
-  if (url) await play(url, speechPlay(cue));
+  state.thinking = false;
+  // 返回的 cue 已是下一句；当前音频对应刚写入 dialogue 的台词。
+  state.speech = url ? payload.game.dialogue.at(-1) : null;
+  adopt(payload.game, options);
+  if (url) {
+    try {
+      await play(url, speechPlay(cue));
+    } finally {
+      if (sessionId === state.sessionId) { state.speech = null; render(); }
+    }
+  }
   return payload;
 }
 
 function fail(error) {
+  if (state.exiting) return;
+  if (sessionUnavailable(error)) {
+    state.expired = true;
+    pauseGame('expired');
+    stop();
+    return;
+  }
   if (error?.payload?.game) adopt(error.payload.game);
   state.mismatch = error?.status === 409 && String(error?.message || '').includes('对不上');
   toast(error?.message || '出了点问题。请再试一次。');
@@ -199,11 +240,12 @@ function pause(ms) {
 function kick() {
   const id = ++state.loopId;
   state.wake?.();
-  runLoop(id);
+  state.chain.then(() => { if (id === state.loopId) runLoop(id); });
 }
 
 async function runLoop(id) {
   while (id === state.loopId) {
+    if (state.inputBusy || state.paused || state.exiting) return;
     const intent = autoIntent(state.game, {
       holdRead: state.holdRead,
       readScale,
@@ -258,6 +300,7 @@ async function runLoop(id) {
 }
 
 async function userAction(fn) {
+  if (state.paused || state.exiting) return;
   state.loopId += 1;
   state.wake?.();
   state.thinking = false;
@@ -304,7 +347,7 @@ async function begin() {
 }
 
 async function submitLine() {
-  if (state.sending) return;
+  if (state.sending || state.inputBusy || state.paused || state.exiting) return;
   state.sending = true;
   const send = document.querySelector('#send');
   if (send) send.disabled = true;
@@ -319,7 +362,8 @@ async function submitLine() {
         return;
       }
       if (!text) return;
-      const said = await call('text', { text, typed: true });
+      const spoken = state.voiceDraft?.text === text ? state.voiceDraft : null;
+      const said = await call('text', { text, typed: !spoken, durationMs: spoken?.durationMs ?? null });
       if (said.accepted === false) {
         toast(state.game?.note || '这句没记上。');
         return;
@@ -338,10 +382,12 @@ async function submitLine() {
 }
 
 async function askHint() {
+  if (state.inputBusy) return;
   await userAction(async () => { await call('hint', {}); });
 }
 
 async function interrupt() {
+  if (state.inputBusy) return;
   const text = state.draft.trim();
   if ([...text].length < 2) {
     toast('插嘴至少说两个字。');
@@ -359,6 +405,7 @@ async function interrupt() {
 }
 
 async function vote(seat) {
+  if (state.inputBusy) return;
   await userAction(async () => {
     const result = await call('vote', { seat });
     if (result.accepted === false) toast('这票未记入：投票已结束或当前不能投票。');
@@ -367,6 +414,7 @@ async function vote(seat) {
 
 // 弃权：#29 起后端接受 {skip:true}。旧后端会拒绝（4xx 或 accepted:false），这时只提示，不影响正常投票。
 async function skipVote() {
+  if (state.inputBusy) return;
   await userAction(async () => {
     try {
       const result = await call('vote', { skip: true });
@@ -407,6 +455,7 @@ async function backToLobby() {
 }
 
 function insertChip(text) {
+  if (state.inputBusy) return;
   const gap = state.draft && !state.draft.endsWith(' ') ? ' ' : '';
   state.draft = `${state.draft}${gap}${text}`.slice(0, 500);
   const input = document.querySelector('#line');
@@ -416,11 +465,177 @@ function insertChip(text) {
   }
 }
 
-function releaseHold() {
+function finishVoiceInput() {
+  state.holding = false;
+  state.inputBusy = false;
+  state.syncedAt = performance.now();
+  state.pausedElapsed = 0;
+  render();
+  kick();
+}
+
+function beginHold() {
+  if (state.paused || state.exiting || state.inputBusy || state.sending || !['speak', 'defense', 'interrupt'].includes(dockMode(state.game))) return;
+  if (state.game.mode !== 'live') { toast('当前是文字模式，请启动语音版后使用麦克风。'); return; }
+  state.inputBusy = true;
+  state.holding = true;
+  state.loopId += 1;
+  state.wake?.();
+  state.thinking = false;
+  stopThinking();
+  stop();
+  state.syncedAt = performance.now();
+  const sessionId = state.sessionId;
+  const { generation, phase, round } = state.game;
+  const originalDraft = state.draft;
+  const originalVoiceDraft = state.voiceDraft;
+  let ending = false;
+  let pendingPreview = null;
+  let previewWork = null;
+  let hasPreview = false;
+  const currentTurn = () => state.sessionId === sessionId && state.game?.generation === generation && state.game?.phase === phase && state.game?.round === round;
+  const showDraft = (text, voiceDraft, focus = false) => {
+    state.draft = text;
+    state.voiceDraft = voiceDraft;
+    const input = document.querySelector('#line');
+    if (input) { input.value = text; if (focus) input.focus(); }
+  };
+  const recognize = (recording, preview) => enqueue(async () => {
+    if (!currentTurn() || state.exiting || state.expired) return;
+    const result = await request(`/api/mixin/${sessionId}/transcribe`, {
+      method: 'POST', body: { pcm: recording.pcm, generation, phase, round, preview },
+    });
+    if (!currentTurn() || (preview && ending)) return;
+    showDraft(result.text, { text: result.text, durationMs: result.durationMs }, !preview);
+    if (preview) hasPreview = true;
+    toast(preview ? '已更新识别预览，可以继续说。' : '识别完成，可以修改文字后点确认。');
+  });
+  toast('请允许麦克风；按住说话，识别结果会陆续显示。');
+  render();
+  startHoldToTalk({
+    onStart() { toast('正在录音，文字会陆续显示；松开后校正（最多 30 秒）。'); },
+    onProgress(recording) {
+      if (ending) return;
+      // 一个请求在途，只保留最新的完整录音，避免慢网络下积压旧预览。
+      pendingPreview = recording;
+      if (previewWork) return;
+      previewWork = (async () => {
+        while (pendingPreview && !ending) {
+          const snapshot = pendingPreview;
+          pendingPreview = null;
+          try { await recognize(snapshot, true); }
+          catch {
+            if (!ending && currentTurn()) toast('这段预览暂未识别，继续说话，松开后会重试。');
+          }
+        }
+      })().finally(() => { previewWork = null; });
+    },
+    onError(error) { toast(error.message); finishVoiceInput(); },
+    async onStop(recording) {
+      ending = true;
+      pendingPreview = null;
+      state.holding = false;
+      render();
+      try {
+        toast(recording ? '正在校正完整语音，请稍候…' : '正在取消录音…');
+        if (previewWork) await previewWork;
+        if (!currentTurn() || state.exiting || state.expired) return;
+        if (!recording) {
+          if (currentTurn()) showDraft(originalDraft, originalVoiceDraft);
+          toast('录音已取消，已恢复之前的文字。');
+          return;
+        }
+        if (recording.durationMs < 200) { toast('录音太短，请按住麦克风说完再松开。'); return; }
+        await recognize(recording, false);
+      } catch (error) {
+        if (currentTurn() && !state.exiting) {
+          if (sessionUnavailable(error)) fail(error);
+          else toast(hasPreview ? '完整语音校正失败，已保留上次预览；末尾可能缺失，请补充或重录。' : error.message || '语音识别失败，请重试或打字。');
+        }
+      } finally {
+        if (currentTurn() && !state.exiting) finishVoiceInput();
+      }
+    },
+  });
+}
+
+function releaseHold(cancel = false) {
   if (!state.holding) return;
   state.holding = false;
-  document.querySelector('#hold')?.classList.remove('holding');
-  stopHoldToTalk();
+  stopHoldToTalk({ cancel });
+}
+
+function pauseGame(menu = 'pause') {
+  if (!state.game || (state.game.phase === 'lobby' && menu !== 'expired') || state.exiting) return;
+  if (!state.paused) {
+    state.pausedElapsed = state.inputBusy ? 0 : Math.max(0, performance.now() - state.syncedAt);
+    state.paused = true;
+    state.loopId += 1;
+    state.wake?.();
+    state.thinking = false;
+    stopThinking();
+    pausePlayback();
+    releaseHold();
+  }
+  state.menu = menu;
+  paintMenu();
+}
+
+function resumeGame() {
+  if (!state.paused || state.expired || state.exiting) return;
+  state.paused = false;
+  state.menu = null;
+  state.syncedAt = performance.now() - state.pausedElapsed;
+  document.querySelector('#game-menu')?.close();
+  resumePlayback();
+  render();
+  kick();
+}
+
+async function exitGame() {
+  if (state.exiting) return;
+  state.exiting = true;
+  state.loopId += 1;
+  state.wake?.();
+  stopThinking();
+  stop();
+  stopHoldToTalk({ cancel: true });
+  paintMenu();
+  const sessionId = state.sessionId;
+  try {
+    if (sessionId && !state.expired) await request(`/api/mixin/${sessionId}/exit`, { method: 'POST' });
+    clearStored();
+    state.draft = '';
+    state.screen = '';
+    state.logOpen = false;
+    document.querySelector('#game-menu')?.close();
+    resumePlayback();
+    render();
+  } catch (error) {
+    if (sessionUnavailable(error)) {
+      state.expired = true;
+      state.menu = 'expired';
+    } else toast(error.message || '退出失败，请重试。');
+  } finally {
+    state.exiting = false;
+    if (state.paused) paintMenu();
+  }
+}
+
+function paintMenu() {
+  const dialog = document.querySelector('#game-menu');
+  if (!dialog || !state.paused) return;
+  const expired = state.expired;
+  const exit = state.menu === 'exit';
+  const title = expired ? '这局已经失效' : exit ? '退出这局？' : '游戏已暂停';
+  const note = expired ? '服务重启或对局已过期，请重新开局。'
+    : exit ? '退出会结束当前对局，返回开局页面。' : '计时和语音播放已暂停，当前输入已保留。';
+  dialog.innerHTML = `<h2 id="menu-title">${title}</h2><p id="menu-note">${note}</p><div class="menu-actions">${expired
+    ? '<button class="btn" type="button" data-menu="exit">重新开局</button>'
+    : `<button class="btn" type="button" data-menu="resume">继续游戏</button><button class="btn ghost" type="button" data-menu="${exit ? 'exit' : 'confirm-exit'}">${exit ? '确认退出' : '退出本局'}</button>`}</div>`;
+  for (const button of dialog.querySelectorAll('button')) button.disabled = state.exiting;
+  if (!dialog.open) dialog.showModal();
+  else dialog.querySelector('button')?.focus();
 }
 
 // ---------- 舞台：1280×720 设计稿，按窗口等比缩放 ----------
@@ -526,6 +741,7 @@ function render() {
   if (screen === 'table') paintTable();
   if (screen === 'reveal') paintReveal();
   if (screen === 'error') paintError();
+  if (state.paused) paintMenu();
 }
 
 // ---------- 开局 ----------
@@ -589,6 +805,8 @@ function tableHtml() {
     </header>
     <nav class="rail">
       <button class="ico" type="button" data-log title="发言记录" aria-label="发言记录">${ICON.log}</button>
+      <button class="control" type="button" id="pause-game" aria-label="暂停游戏">暂停</button>
+      <button class="control" type="button" id="exit-game" aria-label="退出本局">退出</button>
     </nav>
     <div class="wall" id="seats"></div>
     <div class="subs" id="subs" aria-live="polite"><span aria-hidden="true">🎙</span><b class="who-line" id="who"></b><span class="subtitle" id="subtitle"></span></div>
@@ -623,7 +841,7 @@ function paintSeats() {
   const el = document.querySelector('#seats');
   if (!el) return;
   const game = state.game;
-  const seats = tableSeats(game, { thinking: state.thinking });
+  const seats = tableSeats(game, state);
   const key = seats.map(seat => `${seat.seat}:${seat.roleId}`).join('|');
   if (state.wallKey !== key) {
     state.wallKey = key;
@@ -639,12 +857,12 @@ function paintSeats() {
   }
   const mode = dockMode(game);
   const votable = (mode === 'vote' || mode === 'defense') && !game.voteLocked;
-  const sub = subtitleModel(game, { thinking: state.thinking });
+  const sub = subtitleModel(game, state);
   for (const seat of seats) {
     const card = el.querySelector(`.card[data-seat="${seat.seat}"]`);
     if (!card) continue;
     card.classList.toggle('speaking', seat.speaking);
-    card.classList.toggle('dim', !seat.speaking && game.phase !== 'vote' && speakingSeat(game, { thinking: state.thinking }) != null);
+    card.classList.toggle('dim', !seat.speaking && game.phase !== 'vote' && speakingSeat(game, state) != null);
     card.classList.toggle('thinking', seat.speaking && state.thinking);
     const canVote = votable && !seat.you;
     if (canVote) card.dataset.vote = String(seat.seat);
@@ -667,7 +885,7 @@ function paintSeats() {
     }
   }
   const host = el.querySelector('.card.host');
-  if (host) host.classList.toggle('speaking', speakingSeat(game, { thinking: state.thinking }) === 0);
+  if (host) host.classList.toggle('speaking', speakingSeat(game, state) === 0);
 }
 
 function cardHtml(seat, span) {
@@ -699,7 +917,7 @@ function paintTopic() {
   const meta = document.querySelector('#topic-meta');
   const topic = topicModel(game);
   if (!el || !topic) return;
-  const hostTalking = speakingSeat(game, { thinking: state.thinking }) === 0;
+  const hostTalking = speakingSeat(game, state) === 0;
   const hostLine = lastLine(0);
   const metaText = topic.upcoming ? topic.scene : `${topic.scene} · 第 ${topic.round} / 2 轮`;
   if (meta && meta.textContent !== metaText) meta.textContent = metaText;
@@ -709,7 +927,7 @@ function paintTopic() {
 }
 
 function paintSubtitle() {
-  const model = subtitleModel(state.game, { thinking: state.thinking });
+  const model = subtitleModel(state.game, state);
   const who = document.querySelector('#who');
   const line = document.querySelector('#subtitle');
   if (!who || !line) return;
@@ -759,6 +977,15 @@ function paintDock() {
     mine.textContent = target ? `✓ 已投 ${whoName(target.seat, target.name)}（${target.seat} 号）` : game.playerAbstained ? '✓ 你弃权了' : game.voteLocked ? '投票已结束，你未投票' : '你还没投票';
   }
   const logCount = el.querySelector('#log-count');
+  const hold = el.querySelector('#hold');
+  if (hold) {
+    hold.classList.toggle('holding', state.holding);
+    hold.disabled = game.mode !== 'live' || (state.inputBusy && !state.holding);
+    hold.setAttribute('aria-pressed', String(state.holding));
+  }
+  for (const control of el.querySelectorAll('#line, #send, #interrupt, #hint')) control.disabled = state.inputBusy;
+  const countLabel = document.querySelector('#count-label');
+  if (countLabel && COUNT_LABEL[mode]) countLabel.textContent = state.inputBusy ? '秒 · 语音输入中，计时暂停' : COUNT_LABEL[mode];
   if (logCount) logCount.textContent = String(game.dialogue?.length ?? 0);
   let home = el.querySelector('#home');
   if (state.mismatch && !home) {
@@ -774,13 +1001,13 @@ function paintDock() {
 
 function dockHtml(mode) {
   const drawer = `<button class="drawer" type="button" data-log>发言记录 <b>(<span id="log-count">0</span>)</b> ▲</button>`;
-  const hold = `<button class="btn mic" type="button" id="hold" title="网页试玩版用打字；语音版接入灵矽语音。" aria-label="按住说话">${ICON.mic}</button>`;
+  const hold = `<button class="btn mic" type="button" id="hold" title="按住说话，文字陆续显示，松开后校正；也可以按住空格。" aria-label="按住说话" aria-pressed="false">${ICON.mic}</button>`;
   if (mode === 'speak') return `${hold}${lineForm('像模型一样回答这张卡', '确认')}<button class="btn ghost sm" type="button" id="hint">给我灵感</button>${drawer}`;
   if (mode === 'defense') return `${hold}${lineForm('甩一句锅，或直接点头像投票', '确认')}<p class="hint" id="note"></p>${drawer}`;
   if (mode === 'interrupt') return `${hold}${lineForm('打断这句，替自己辩一下', '打断')}<p class="hint" id="note"></p>${drawer}`;
   if (mode === 'vote') return `<div class="hint big"><b>👆 点击头像投票，或点右上 SKIP 弃权</b><span id="note"></span></div>${drawer}`;
   if (mode === 'ballots') return `<div class="hint"><span id="note"></span><b id="mine" role="status"></b></div>${drawer}`;
-  return `<span class="btn mic wait" aria-hidden="true">${ICON.mic}</span><div class="hint"><b>按住说话</b><span id="note"></span></div>${drawer}`;
+  return `<span class="btn mic wait" aria-hidden="true">${ICON.mic}</span><div class="hint"><b>请听其他玩家发言</b><span id="note"></span></div>${drawer}`;
 }
 
 function chipsHtml() {
@@ -1206,7 +1433,7 @@ async function reloadView() {
     adopt(payload.game);
     kick();
   } catch (error) {
-    toast(error.message);
+    fail(error);
   }
 }
 
@@ -1233,16 +1460,15 @@ app.addEventListener('click', event => {
     if (input) input.value = state.alias;
   }
   if (button.id === 'hint') askHint();
+  if (button.id === 'pause-game') pauseGame();
+  if (button.id === 'exit-game') pauseGame('exit');
   if (button.id === 'skip' && button.classList.contains('open')) skipVote();
   if (button.id === 'again') again();
   if (button.id === 'share') downloadCard();
   if (button.id === 'back') backToLobby();
   if (button.id === 'reload') reloadView();
   if (button.id === 'home' || button.id === 'abandon') {
-    stop();
-    clearStored();
-    state.screen = '';
-    render();
+    pauseGame('exit');
   }
 });
 
@@ -1264,20 +1490,42 @@ app.addEventListener('pointerdown', event => {
   const button = event.target.closest('#hold');
   if (!button) return;
   event.preventDefault();
-  state.holding = true;
-  button.classList.add('holding');
-  startHoldToTalk({
-    onError(error) { toast(error.message || '录音没有开始。'); },
-  }).catch(error => toast(error.message || '录音没有开始。'));
+  button.setPointerCapture(event.pointerId);
+  beginHold();
 });
 
-window.addEventListener('pointerup', releaseHold);
-window.addEventListener('pointercancel', releaseHold);
+window.addEventListener('pointerup', () => releaseHold());
+window.addEventListener('pointercancel', () => releaseHold(true));
+app.addEventListener('keydown', event => {
+  if (event.target.id !== 'hold' || ![' ', 'Enter'].includes(event.key)) return;
+  event.preventDefault();
+  if (!event.repeat) beginHold();
+});
+app.addEventListener('keyup', event => {
+  if (event.target.id !== 'hold' || ![' ', 'Enter'].includes(event.key)) return;
+  event.preventDefault();
+  releaseHold();
+});
+window.addEventListener('blur', () => releaseHold(true));
+window.addEventListener('pagehide', () => releaseHold(true));
+
+const gameMenu = document.querySelector('#game-menu');
+gameMenu?.addEventListener('cancel', event => {
+  event.preventDefault();
+  resumeGame();
+});
+gameMenu?.addEventListener('click', event => {
+  const action = event.target.closest('[data-menu]')?.dataset.menu;
+  if (action === 'resume') resumeGame();
+  if (action === 'confirm-exit') pauseGame('exit');
+  if (action === 'exit') exitGame();
+});
 
 setInterval(() => {
   const el = document.querySelector('#count');
   if (!el || !state.game) return;
-  const ms = remainingMs(state.game.deadlineAt, state.clock, Math.round(performance.now() - state.syncedAt));
+  const elapsed = state.paused ? state.pausedElapsed : state.inputBusy ? 0 : Math.round(performance.now() - state.syncedAt);
+  const ms = remainingMs(state.game.deadlineAt, state.clock, elapsed);
   el.textContent = ms == null ? '–' : String(Math.ceil(ms / 1000));
   const bar = document.querySelector('#bar');
   if (!bar) return;

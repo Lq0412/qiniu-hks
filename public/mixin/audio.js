@@ -1,5 +1,5 @@
-// 文字模式的音频接口。本文件不调用 getUserMedia，不请求麦克风，不连接灵矽。
-// 语音调度（feat/mixin-voice）只替换函数体，保持导出名和参数不变。
+// 角色音频播放与按住录音。录音复用 16kHz PCM worklet，松开后释放麦克风。
+import { VoiceAudio } from '../audio.js';
 //
 // play(url, options) → Promise<void>
 //   url：同源音频地址。空字符串直接 resolve。
@@ -20,7 +20,9 @@
 //
 // startHoldToTalk(handlers) → Promise<void>
 //   handlers.onStart()
-//   handlers.onStop({ blob, durationMs, mimeType })
+//   handlers.onProgress({ pcm, durationMs })：每两秒提供当前完整录音的预览快照。
+//   handlers.onStop({ pcm, durationMs })，pcm 为 16kHz 单声道 16bit PCM 的 base64。
+//   尚未授权或主动取消时 onStop(null)。
 //   handlers.onError(error)
 //   handlers.onLevel(level)  level 为 0 到 1，可选。
 //   按下时调用。失败走 onError，不要抛出未捕获异常。
@@ -29,12 +31,37 @@
 //   松开时调用。语音模式结束录音并触发一次 onStop。
 
 // 地址带 reveal=1，或是 webaudio:reveal 时，先用 WebAudio 合成约 0.36 秒的揭晓短音，再播对白。
-// voiceId 保持字符串，不转成数字。当前页面按住说话不传 onStop，这里不申请麦克风，玩家打字。
+// voiceId 保持字符串，不转成数字。
 
 let generation = 0;
 let current = null;
 let finishCurrent = null;
 let thinking = null;
+let playbackPaused = false;
+let playAttempt = 0;
+
+function startCurrentAudio() {
+  if (playbackPaused || !current) return;
+  const audio = current;
+  const attempt = ++playAttempt;
+  try {
+    const pending = audio.play();
+    pending?.catch?.(() => {
+      if (current === audio && playAttempt === attempt) finishCurrent?.(false);
+    });
+  } catch { if (current === audio) finishCurrent?.(false); }
+}
+
+export function pausePlayback() {
+  playbackPaused = true;
+  playAttempt += 1;
+  current?.pause();
+}
+
+export function resumePlayback() {
+  playbackPaused = false;
+  startCurrentAudio();
+}
 
 function chime(cancelled) {
   const AudioCtx = globalThis.AudioContext || globalThis.webkitAudioContext;
@@ -104,8 +131,7 @@ export async function play(url, options = {}) {
     finishCurrent = finish;
     audio.onended = () => finish(true);
     audio.onerror = () => finish(false);
-    const played = audio.play();
-    if (played && typeof played.catch === 'function') played.catch(() => finish(false));
+    startCurrentAudio();
   });
 }
 
@@ -160,8 +186,53 @@ export function stopThinking() {
   thinking = null;
 }
 
-export async function startHoldToTalk(handlers = {}) {
-  void handlers;
+let recording = null;
+
+function recordingSnapshot(capture) {
+  let binary = '';
+  for (const packet of capture.packets) binary += String.fromCharCode(...packet);
+  return { pcm: btoa(binary), durationMs: capture.bytes / 32 };
 }
 
-export function stopHoldToTalk() {}
+export async function startHoldToTalk(handlers = {}) {
+  if (recording) return;
+  const capture = { audio: new VoiceAudio(), packets: [], bytes: 0, previewBytes: 0, started: false, handlers, timer: null };
+  recording = capture;
+  try {
+    if (!globalThis.navigator?.mediaDevices?.getUserMedia) throw new Error('当前浏览器不支持录音，请使用 Chrome 或 Edge 打开本地页面。');
+    await capture.audio.init(packet => {
+      if (recording !== capture || !capture.started) return;
+      capture.packets.push(new Uint8Array(packet));
+      capture.bytes += packet.byteLength;
+      if (capture.bytes >= 960000) stopHoldToTalk();
+      else if (handlers.onProgress && capture.bytes - capture.previewBytes >= 64000) {
+        capture.previewBytes = capture.bytes;
+        handlers.onProgress(recordingSnapshot(capture));
+      }
+    });
+    if (recording !== capture) return;
+    capture.started = true;
+    capture.audio.record(true);
+    capture.timer = setTimeout(() => stopHoldToTalk(), 30000);
+    handlers.onStart?.();
+  } catch (error) {
+    capture.audio.close();
+    if (recording !== capture) return;
+    recording = null;
+    const message = error.name === 'NotAllowedError' ? '麦克风权限被拒绝，请在浏览器中允许麦克风后重试。'
+      : error.name === 'NotFoundError' ? '没有找到麦克风，请连接设备后重试。'
+      : error.name === 'NotReadableError' ? '麦克风无法使用，可能被其他程序占用。'
+      : error.message || '录音没有开始，请重试。';
+    handlers.onError?.(new Error(message));
+  }
+}
+
+export function stopHoldToTalk({ cancel = false } = {}) {
+  const capture = recording;
+  if (!capture) return;
+  recording = null;
+  clearTimeout(capture.timer);
+  capture.audio.close();
+  if (cancel || !capture.started) { capture.handlers.onStop?.(null); return; }
+  capture.handlers.onStop?.(recordingSnapshot(capture));
+}

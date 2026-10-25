@@ -114,8 +114,16 @@ export function createMixinLink({
   function startQueued() {
     if (draining || turn || !queued.length) return;
     turn = queued.shift();
-    injected.push(turn.text);
-    try { turn.onSent?.(); sendJson(turn.message); }
+    if (turn.kind !== 'asr') injected.push(turn.text);
+    try {
+      turn.onSent?.(); sendJson(turn.message);
+      if (turn.kind === 'asr') {
+        for (let offset = 0; offset < turn.input.length; offset += 640) {
+          socket.send(turn.input.subarray(offset, offset + 640), { binary: true });
+        }
+        sendJson({ type: 'listen', state: 'stop', mode: 'manual' });
+      }
+    }
     catch (error) { failTurn(error); }
   }
 
@@ -124,9 +132,16 @@ export function createMixinLink({
     startQueued();
   }
 
+  function drainResponse(current) {
+    clearDrain();
+    draining = { seq: current.seq, timer: setTimeout(finishDrain, settleMs) };
+    try { sendJson({ type: 'abort', reason: 'wake_word_detected' }); }
+    catch { /* 断线时由 close 清理 */ }
+  }
+
   function onMessage(data, binary) {
     if (binary) {
-      if (draining) return;
+      if (draining || turn?.kind === 'asr') return;
       const frame = Buffer.from(data);
       let pcm = format === 'pcm' ? frame : null;
       if (format === 'opus' && decoder) {
@@ -160,10 +175,28 @@ export function createMixinLink({
     }
     if (message.type === 'stt') {
       const text = typeof message.text === 'string' ? message.text : '';
+      if (turn?.kind === 'asr') {
+        const current = turn;
+        turn = null;
+        // 只取识别文字，终止平台随后自动生成的回复，避免串入下一位角色。
+        drainResponse(current);
+        if (text.trim()) current.resolve({ text: text.trim() });
+        else current.reject(new Error('没有听清，请按住麦克风重说。'));
+        return;
+      }
       emit({ type: 'stt', text, echo: isInjectedEcho(text, injected) });
       return;
     }
     if (message.type === 'tts') {
+      if (turn?.kind === 'asr') {
+        if (message.state === 'stop') {
+          const current = turn;
+          turn = null;
+          current.reject(new Error('没有收到识别文字，请重试。'));
+          startQueued();
+        }
+        return;
+      }
       emit({ type: 'tts', message });
       if (turn && message.state === 'sentence_start' && message.text) turn.spoken.push(message.text);
       if (turn && message.state === 'stop') {
@@ -272,6 +305,30 @@ export function createMixinLink({
       promise.seq = id;
       return promise;
     },
+    transcribe(input, { timeoutMs = 15000 } = {}) {
+      if (!Buffer.isBuffer(input) || !input.length || input.length > 960000 || input.length % 2) throw new Error('录音格式无效，最多支持 30 秒。');
+      if (turn) throw new Error('上一段语音还没结束，请稍后重试。');
+      const id = ++seq;
+      let timer;
+      const pending = new Promise((resolve, reject) => {
+        queued.push({ seq: id, kind: 'asr', input, message: { type: 'listen', state: 'start', mode: 'manual' }, resolve, reject });
+        timer = setTimeout(() => {
+          const error = new Error('语音识别超时，请重试。');
+          if (turn?.seq === id) {
+            const current = turn;
+            turn = null;
+            drainResponse(current);
+            reject(error);
+          } else {
+            const index = queued.findIndex(item => item.seq === id);
+            if (index >= 0) queued.splice(index, 1);
+            reject(error);
+          }
+        }, timeoutMs);
+        startQueued();
+      });
+      return pending.finally(() => clearTimeout(timer));
+    },
     cancelTurn(id) {
       const cancelled = Object.assign(new Error('这一句已取消'), { code: 'CANCELLED' });
       if (id !== undefined && turn?.seq !== id) {
@@ -283,21 +340,16 @@ export function createMixinLink({
       if (!current) return;
       turn = null;
       current.reject(cancelled);
-      clearDrain();
-      draining = { seq: current.seq, timer: setTimeout(finishDrain, settleMs) };
-      try { sendJson({ type: 'abort', reason: 'wake_word_detected' }); }
-      catch { /* 断线时发不出去 */ }
+      drainResponse(current);
     },
     abort() {
       const current = turn;
       if (!current) return;
       // 打断立即归还调用者，旧轮帧继续排空，不能交给下一句。
       turn = null;
-      current.resolve({ aborted: true, spoken: '', pcm: Buffer.alloc(0), frames: [], format });
-      clearDrain();
-      draining = { seq: current.seq, timer: setTimeout(finishDrain, settleMs) };
-      try { sendJson({ type: 'abort', reason: 'wake_word_detected' }); }
-      catch { /* 断线时由 close 清理排空 */ }
+      if (current.kind === 'asr') current.reject(new Error('录音识别已取消。'));
+      else current.resolve({ aborted: true, spoken: '', pcm: Buffer.alloc(0), frames: [], format });
+      drainResponse(current);
     },
     listen(state) { sendJson({ type: 'listen', state, mode: 'manual' }); },
     sendAudio(chunk) {

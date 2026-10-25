@@ -202,7 +202,7 @@ HTTP 建局只接受 `demo`、`difficulty`、`seed`、`sceneId`、`cardIds`、`r
 
 预合成清单保持原 11 条最前，再加入 3 个场景 × 4 个玩家代号的 12 条开场白、18 张题卡 × 第 1/2 题的 36 条出题段，以及 5 个 AI 名字的「请{name}先来。」段，共 64 条（其中默认开场白文本重复，id 各自稳定）。host_card 优先命中整句，否则两段都命中同一群主音色时拼接 PCM，中间加 150ms 静音；缺任意一段或原句被 90 字截断时走实时合成。预合成条目的 `ttsHash` 由 `ttsKey` 对实际 detect 中净化后的台词与音色计算 SHA-256，取前 16 位十六进制；运行时命中也校验该哈希，旧条目缺少或不匹配时走实时合成。增量预合成仅跳过 manifest 中 id、文本、音色、ttsHash 相同且文件存在的条目，每完成一句就保存包含旧条目的清单，打断或后续失败不会丢掉已经保存的成果。
 
-对局到 result 时先作废并取消预取，再 `lane.releaseGame()`；通道回到 idle 后自动续跑增量预合成。下一局可再次打断续跑，仍用同一条连接。result 不再发起对局 detect，后台预合成可以继续 detect。结局后的 restart 在下一次 start 重新取得通道。当前中途不能 restart；HTTP TTL 删除会话和新建另一局尚无语音所有权交接或显式弃局释放，旧局可能继续占用或争用连接，需要后续补会话生命周期管理。
+对局到 result 时先作废并取消预取，再 `lane.releaseGame()`；通道回到 idle 后自动续跑增量预合成。下一局可再次打断续跑，仍用同一条连接。result 不再发起对局 detect，后台预合成可以继续 detect。结局后的 restart 在下一次 start 重新取得通道。中途退出通过 `POST /api/mixin/:id/exit` 清理会话并释放资源，HTTP TTL 清理也会调用 `close()`。已释放的旧局不会再 abort 共用连接。新建另一局时的跨会话语音所有权交接仍未实现。
 
 揭晓顺序固定：浏览器先合成约 0.36 秒短音，再播群主的「投票结束，揭晓时间。」（有预合成文件就用文件，否则实时），最后实时念结局口播。短音不写进这段 WAV，避免响两次。过渡段用 `timeoutMs`，结局段独立用 `revealTimeoutMs`（默认等于 `timeoutMs`），两段各自启动计时；过渡超时仍尝试结局，结局失败仍保留过渡音频。
 
@@ -246,7 +246,7 @@ HTTP 建局只接受 `demo`、`difficulty`、`seed`、`sceneId`、`cardIds`、`r
 | `public/mixin/index.html` | 页面 |
 | `public/mixin/app.js` | 渲染、倒计时、调用顺序 |
 | `public/mixin/logic.js` | 纯函数：建局参数、公开视图裁剪、座位、字幕、推进意图、分享卡绘制 |
-| `public/mixin/audio.js` | 播放同源 WAV、停止、思考音。揭晓短音用 WebAudio 合成。按住说话是空函数，不调用 `getUserMedia` |
+| `public/mixin/audio.js` | 播放同源 WAV、暂停/继续、停止、思考音与揭晓短音；复用 `VoiceAudio` 采集玩家录音，仅语音模式请求麦克风 |
 | `public/mixin/style.css` | 深色牌桌 |
 
 打开 http://127.0.0.1:4173/mixin 。选场景和难度，输入或随机一个化名，开始。请求是 `POST /api/mixin` 再 `POST /api/mixin/:id/start`。局 id 用创建响应里的 `id`，不是 `game.id`。cookie `mixin` 由浏览器保存。
@@ -263,7 +263,27 @@ HTTP 建局只接受 `demo`、`difficulty`、`seed`、`sceneId`、`cardIds`、`r
 
 揭晓前 `sanitizeView` 会丢掉 `humanScore`、`aiScore`、`script`、`report`、`outcome`，也不会把 `examplePlayer`、舞台指令、`fallbackText` 放进界面状态。`sessionStorage` 只存局 id 和时钟。409（cookie 对不上或规则拒绝）和 403（不是本机）用 `friendlyError` 提示。断线或刷新后用原来的 cookie 再 `GET /api/mixin/:id`。
 
-如果 step 响应里带了字符串 `audioUrl` 或 `clip.url`，页面会 `await play(url, speechPlay(cue))`。`seat`、`roleId`、`voiceId` 都来自这一步之前的当前 cue；`sanitizeView` 只保留 `cue.voice.voiceId`。文字模式没有音频字段。按住说话按钮调用 `startHoldToTalk` / `stopHoldToTalk`，这两个函数是空的，不上传录音。
+如果 step 响应里带了字符串 `audioUrl` 或 `clip.url`，页面会 `await play(url, speechPlay(cue))`。`seat`、`roleId`、`voiceId` 都来自这一步之前的当前 cue；`sanitizeView` 只保留 `cue.voice.voiceId`。响应中的 cue 已指向下一位；播放期间通过 `state.speech` 锁定刚写入 dialogue 的当前台词，高亮与字幕优先展示它，结束或失败后清除。文字模式没有音频字段。
+
+### 玩家录音识别
+
+语音模式下，`startHoldToTalk` 复用 `VoiceAudio` 与 `/recorder.js`，采集 16kHz、单声道、16bit little-endian PCM。松开即关闭麦克风，录音上限 30 秒；等待授权时松开、指针取消或窗口失焦会取消录音，迟到的授权也会释放设备。文字模式不请求麦克风。
+
+`POST /api/mixin/:id/transcribe` 接收 `{pcm, generation, phase, round, preview?}`，pcm 为 base64，preview 默认 false。沿用本机会话 cookie 与 Origin 校验，仅该路由允许约 1.28MB 请求体。服务端校验录音 0.2–30 秒与当前回合，只允许 round_player、defense、accuse；识别期间拒绝其他推进请求。录音不落盘、不写日志。
+
+`createVoiceSession.transcribe` 取消当前预取，将录音交给同一条 `createMixinLink`。ASR 在取消轮的排空完成后发送 `listen.start`、640 字节 PCM 帧和 `listen.stop`；收到 STT 后返回文字，并 abort、排空平台自动回复，防止它串进角色配音。完整识别上限 15 秒、预览上限 5 秒（均含排队），空结果、超时或断线明确失败；完整识别结束后恢复角色预取，预览之间不启动配音。不会新建第二条设备连接。
+
+灵矽公开协议只定义 `stt.text`，未定义逐字增量或 final 标记，因此录音预览复用已验证的整段识别：每采集两秒 PCM，产生从开头到当前的完整快照。前端一次只发送一个请求，在途期间用最新快照替换待发送项，不积压旧候选。每次返回用整段文字替换输入框，支持纠正前文、不拼接重复字。松开后丢弃未发送预览、忽略迟到预览，再识别完整录音。取消录音恢复原草稿；最终校正失败保留已有预览并提示末尾可能缺失。预览失败不会停止录音。更新速度由平台返回决定，非逐字流式字幕。协议来源：https://linx.qiniu.com/docs/xrobot/platform/websocket 。
+
+浏览器录音及识别期间暂停 step/tick 与可视倒计时、禁用提交控件。成功只填输入框，玩家可修改后确认；保持原识别文字时提交 `typed:false` 和录音时长，修改后按打字提交。失败保留原草稿并恢复计时，不使用默认答案。互盘识别也只填草稿，由玩家点「打断」提交。离线测试覆盖音频采集、授权拒绝/迟到、回合校验、同连接隔离、超时恢复及确认前不提交。基础录音识别已有用户本机试玩记录；新增预览、最终校正及异常恢复仍需逐项真机验收，离线测试不代表 ASR 效果或听感验收。
+
+### 暂停、退出与失效恢复
+
+牌桌右侧常驻「暂停」「退出」。暂停只停止浏览器自动 step/tick，保留当前服务端局面、输入草稿和剩余时间；`pausePlayback` 保留同一个 Audio 元素与播放位置，暂停期间到达的配音等待继续。恢复时先恢复该段音频，自动循环等待现有请求/播放队列结束后再调度下一句。服务端使用客户端推进的逻辑时钟，不需要另加墙钟暂停协议。录音中的暂停会停止采集、完成识别；识别结果仍只进入草稿。
+
+退出使用原生 dialog 确认。`POST /api/mixin/:id/exit` 沿用 cookie/Origin 校验，即使 ASR 正在执行也可退出；调用语音会话 `close()`，取消预取、abort 当前轮、增加 generation 并清空 cue，释放仍由本局占用的通道，删除会话并清 cookie。退出不等待暂停中的音频队列，迟到响应通过 sessionId 校验避免恢复旧页面；已结束的旧局不会 abort 被后续任务复用的连接。
+
+中途收到不存在/过期/会话不匹配的错误时，停止自动推进和播放，用「这局已经失效」dialog 提供「重新开局」，不继续展示可提交的旧对局。Chrome 无头浏览器的纯文字验收已验证暂停时倒计时冻结、继续后草稿保留、确认退出回到开局及服务重启后的失效恢复；仅访问本地 HTTP，没有麦克风请求。音频位置保留、晚到响应隔离与资源释放另有 mock/假连接测试，不代表真实语音验收。
 
 ### 浏览器音频协议
 
@@ -273,7 +293,7 @@ HTTP 建局只接受 `demo`、`difficulty`、`seed`、`sceneId`、`cardIds`、`r
 - 地址带 `reveal=1`，或是 `webaudio:reveal`：先用 WebAudio 合成约 0.36 秒、880Hz 加 1320Hz 的短音，再播后面的 WAV。`webaudio:` 开头的地址本身不请求网络。短音被打断时，后面的 WAV 也不再播。
 - `stop()` 只停对白，不停思考音。
 - `playThinking()` / `stopThinking()`：座位切换时的循环思考音。没有 `AudioContext` 时什么都不做。重复调用 `playThinking()` 只保留一层。
-- `startHoldToTalk(handlers)` / `stopHoldToTalk()`：空函数。页面按住说话只传 `onError`，不传 `onStop`。玩家在输入框打字，然后点确认。
+- `startHoldToTalk` / `stopHoldToTalk`：采集和结束玩家录音，支持取消、录音预览和结束回调，具体流程见「玩家录音识别」。识别结果只填入草稿，玩家确认后才提交。
 - 一句语音的地址是 `audioUrl`，与 `clip.url` 相同，形如 `/api/mixin/<局id>/clip/<片段id>`。揭晓这一句再加 `?reveal=1`。读取要带 cookie `mixin`，否则 409。预合成静态文件是 `GET /mixin/audio/<文件名>`，不需要这张 cookie。文件名只能是一层，后缀只能是 `.wav`、`.mxop`、`.json`。`.` 开头和带目录的名字不提供。
 
 ## 怎么跑
@@ -294,7 +314,7 @@ export LINX_API_KEY='<API key>'
 npm run play:voice
 ```
 
-需要 Node.js 24、上面的设备 JSON（也可以是文件路径，或仓库根目录已被忽略的 `.linx-device.json`）、`LINX_API_KEY`，以及浏览器允许播放声音。无需麦克风权限；这一局不上传「按住说话」的录音，玩家在输入框打字并点确认。第一次启动会在后台增量预合成，需预留几分钟；已有条目会跳过，全量耗时不作固定承诺。打开命令打印的地址，默认是 http://127.0.0.1:4173/mixin 。`PORT` 改端口。不要设置 `LINX_WS_URL`；不要同时打开首页语音或另跑一个预合成进程。没有凭据时同一条命令退回文字局，不连接灵矽。
+需要 Node.js 24、上面的设备 JSON（也可以是文件路径，或仓库根目录已被忽略的 `.linx-device.json`）、`LINX_API_KEY`，以及浏览器允许播放声音。打字不需要麦克风权限；按住说话需授权，录音送到灵矽识别，文字确认后才提交。第一次启动会在后台增量预合成，需预留几分钟；已有条目会跳过，全量耗时不作固定承诺。打开命令打印的地址，默认是 http://127.0.0.1:4173/mixin 。`PORT` 改端口。不要设置 `LINX_WS_URL`；不要同时打开首页语音或另跑一个预合成进程。没有凭据时同一条命令退回文字局，不连接灵矽。
 
 ## 分工
 
@@ -308,7 +328,7 @@ npm run play:voice
 
 - [ADR-001 作品方向：从「人类模型测评」转向「谁是人类」（混入模型群）](https://github.com/Lq0412/qiniu-hks/issues/10)：方向定为「谁是人类」，玩家假装是 5 号，旧版留作可玩兜底。
 - [ADR-002 分支与交付策略：main 保留旧版兜底，新玩法走特性分支](https://github.com/Lq0412/qiniu-hks/issues/11)：`main` 保持旧游戏可玩，新玩法在 `feat/mixin-core`，语音探针在 `feat/voice-probe`，界面以后另开分支，改动都走 PR。
-- [ADR-003 运行形态：Web 端 + 按住说话，文字模式不依赖麦克风](https://github.com/Lq0412/qiniu-hks/issues/12)：决策目标是 Web + 按住说话；当前实现两种模式都打字，按钮尚未接入录音，文字模式不调用 `getUserMedia`。
+- [ADR-003 运行形态：Web 端 + 按住说话，文字模式不依赖麦克风](https://github.com/Lq0412/qiniu-hks/issues/12)：语音版支持录音、识别草稿与确认；文字模式不调用 `getUserMedia`。
 - [ADR-004 对局核心：服务端状态机 + 人味分，不用死关键词，每阶段超时兜底](https://github.com/Lq0412/qiniu-hks/issues/13)：服务端状态机露出阶段和代数号，人味分加难度决定票，每阶段都有超时兜底，并提供 `npm run sim`。推进由客户端 `tick` / `step` 触发。
 - [ADR-005 语音调度：一局保持单条灵矽连接，每回合换音色，固定话术预合成兜底（已决定）](https://github.com/Lq0412/qiniu-hks/issues/14)：一局一条灵矽连接，不按阶段重连、不重新 OTA。探针已测出 detect 换音色、`{{counter_brief}}` 只在 hello 注入、首音延迟和 TTS 缓存。语音局已按此实现。
 - [ADR-006 凭据处理：灵矽设备凭据只在运行时注入，不进仓库](https://github.com/Lq0412/qiniu-hks/issues/15)：灵矽凭据不入库、不进日志，离线测试和 CI 不依赖它们。
@@ -318,7 +338,7 @@ npm run play:voice
 ## 当前限制
 
 - 页面仍由客户端 `tick` / `step` 推进，没有服务端挂钟。
-- 「按住说话」不上传录音。语音局和文字局都是打字后点确认。
+- 玩家识别使用录音中的完整快照预览及松开后的整段校正，尚非逐字流式字幕；基础录音已由用户本机确认，新增预览需实测更新速度。
 - 旧版六题页的连接仍在 `linx.mjs`，和这场对局分开。`[mcp拒绝]` 记在那条旧连接上。
 
 ## 真机验收记录与适用范围
@@ -331,7 +351,7 @@ npm run play:voice
 | PR #24 @ `68a9301`，01:42–02:02 的复验 F 局 | 正式 20s 超时，缓存删一半，开局时预合成在跑，按浏览器节奏 | start 106ms（修复前 E 局 19.0s）；27 句 0 无声、0 声线错；等待 p50 4ms / p90 3.6s；全程 1 条外连。 |
 | 同次复验 H 局 | 临时副本 9s 超时，按浏览器节奏 | 4/27 句无声，均为 accuse 长句；超时后的下一句有声。揭晓只有过渡音频，结局长句仍超时，因此不能把「其余句有声」解释为结局完整。 |
 
-这些是特定提交、缓存和节奏条件下的记录，不是所有环境的性能保证。本次文档提交仅跑云端离线测试与文字模拟，测试只用假 WSS，不连接真机。音色实际听感、浏览器播放与打断、预合成中途开局及结局续跑、超时后下一句恢复、完整揭晓口播仍需真机验收；玩家麦克风输入尚未接入，不列为已验收功能。
+这些是特定提交、缓存和节奏条件下的记录，不是所有环境的性能保证。测试只用假 WSS，不连接真机。音色实际听感、浏览器播放与打断、预合成中途开局及结局续跑、超时后下一句恢复、完整揭晓口播仍需真机验收；新增玩家麦克风输入已接入，尚不列为已完成真机验收的功能。
 
 ## 后端资源与结算字段补充
 

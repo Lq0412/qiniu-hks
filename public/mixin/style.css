@@ -37,7 +37,7 @@ button:focus-visible, input:focus-visible, label:focus-within, .card[data-vote]:
 .btn.ghost { background: var(--panel); color: var(--cream); border-color: var(--line); box-shadow: 0 6px 0 #0a050a; }
 .btn.red { background: var(--red); color: var(--cream); }
 .btn.sm { height: 50px; padding: 0 20px; font-size: 18px; }
-.mic { width: 66px; height: 66px; padding: 0; border-radius: 50%; }
+.mic { width: 66px; height: 66px; padding: 0; border-radius: 50%; touch-action: none; }
 .mic svg { width: 30px; height: 30px; stroke: var(--ink); fill: none; stroke-width: 2.6; stroke-linecap: round; }
 .mic.wait { background: #5a4a5a; filter: saturate(.3); cursor: default; }
 .mic.holding { background: var(--red); animation: pulse 1s ease-in-out infinite; }
@@ -112,6 +112,15 @@ button:focus-visible, input:focus-visible, label:focus-within, .card[data-vote]:
 .rail .ico { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: var(--panel); border: 2px solid var(--line); }
 .rail .ico svg { width: 26px; height: 26px; stroke: var(--cream); fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .rail .ico:hover { background: var(--gold); border-color: var(--ink); } .rail .ico:hover svg { stroke: var(--ink); }
+.rail .control { width: 46px; min-height: 38px; padding: 6px 2px; border: 2px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--cream); font: 700 14px var(--font); }
+.rail .control:hover { border-color: var(--gold); color: var(--gold); }
+.game-menu { width: min(420px, calc(100vw - 48px)); margin: auto; padding: 28px; border: 3px solid var(--line); border-radius: 18px; background: var(--panel); color: var(--cream); }
+.game-menu::backdrop { background: rgba(10,5,10,.78); }
+body:has(.game-menu[open]) .stage * { animation-play-state: paused !important; }
+.game-menu h2 { margin: 0 0 12px; font-size: 28px; }
+.game-menu p { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.6; }
+.menu-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.menu-actions .btn { height: 46px; padding: 0 20px; font-size: 16px; }
 
 /* ---------- 牌墙：3 / 群主 / 2 ---------- */
 .wall { position: absolute; left: 40px; right: 96px; top: 104px; display: grid; grid-template-columns: repeat(6, 1fr); grid-template-rows: 162px 96px 162px; gap: 16px; }

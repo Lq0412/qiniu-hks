@@ -211,8 +211,9 @@ export function phaseLabel(game) {
   return name;
 }
 
-export function speakingSeat(game, { thinking = false } = {}) {
+export function speakingSeat(game, { thinking = false, speech = null } = {}) {
   if (!game) return null;
+  if (speech) return speech.seat;
   if (thinking && game.cue) return game.cue.seat;
   if (!thinking && (game.phase === 'round_player' || game.phase === 'defense') && !game.cue) return game.playerSeat ?? 5;
   if (!thinking && game.phase === 'vote' && !game.cue && game.playerVote == null) return game.playerSeat ?? 5;
@@ -247,7 +248,8 @@ export function subtitleSize(text) {
   return 'short';
 }
 
-export function subtitleModel(game, { thinking = false } = {}) {
+export function subtitleModel(game, { thinking = false, speech = null } = {}) {
+  if (speech) return { name: speech.name, seat: speech.seat, text: speech.text, thinking: false, size: subtitleSize(speech.text) };
   if (thinking && game?.cue) {
     return { name: game.cue.name || HOST_NAME, seat: game.cue.seat, text: '思考中…', thinking: true, size: 'short' };
   }
@@ -353,6 +355,10 @@ export function friendlyError(status, payload) {
   if (status === 404) return '没有这一局，或页面已经过期。请重新开局。';
   if (status === 400) return raw || '请求没有发送成功。';
   return raw || '出了点问题。请再试一次。';
+}
+
+export function sessionUnavailable(error) {
+  return error?.status === 404 || (error?.status === 409 && /没有这一局|找不到这一局|不属于|对不上/.test(error.payload?.error || error.message || ''));
 }
 
 export function remainingMs(deadlineAt, clock, elapsedMs = 0) {

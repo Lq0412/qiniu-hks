@@ -12,7 +12,7 @@ export function createMixinHub({ now = Date.now, ttlMs = SESSION_TTL_MS, createS
   const sweep = () => {
     const clock = now();
     for (const [id, session] of sessions) {
-      if (clock - session.updated > ttlMs) sessions.delete(id);
+      if (clock - session.updated > ttlMs) { session.close?.(); sessions.delete(id); }
     }
   };
   return {
@@ -32,6 +32,16 @@ export function createMixinHub({ now = Date.now, ttlMs = SESSION_TTL_MS, createS
       try {
         if (method === 'GET' && action === 'view') return ok(session);
         if (method !== 'POST') return { status: 404, payload: { error: '未找到接口。' } };
+        if (action === 'exit') {
+          session.close?.();
+          sessions.delete(match[1]);
+          return { status: 200, payload: { exited: true }, headers: { 'Set-Cookie': 'mixin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0' } };
+        }
+        if (session.transcribing) return { status: 409, payload: { error: '正在识别语音，请稍候。' } };
+        if (action === 'transcribe') {
+          if (!session.transcribe) return { status: 409, payload: { error: '当前是文字模式，请启动语音版后使用麦克风。' } };
+          return done(session, await session.transcribe(body), match[1]);
+        }
         if (action === 'start') return done(session, await session.start(), match[1]);
         if (action === 'text') return done(session, session.say(body.text, body), match[1]);
         if (action === 'confirm') return done(session, session.confirm(body.revision), match[1]);
