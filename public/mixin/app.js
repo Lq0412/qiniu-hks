@@ -489,10 +489,6 @@ function beginHold() {
   const { generation, phase, round } = state.game;
   const originalDraft = state.draft;
   const originalVoiceDraft = state.voiceDraft;
-  let ending = false;
-  let pendingPreview = null;
-  let previewWork = null;
-  let hasPreview = false;
   const currentTurn = () => state.sessionId === sessionId && state.game?.generation === generation && state.game?.phase === phase && state.game?.round === round;
   const showDraft = (text, voiceDraft, focus = false) => {
     state.draft = text;
@@ -500,45 +496,25 @@ function beginHold() {
     const input = document.querySelector('#line');
     if (input) { input.value = text; if (focus) input.focus(); }
   };
-  const recognize = (recording, preview) => enqueue(async () => {
+  const recognize = recording => enqueue(async () => {
     if (!currentTurn() || state.exiting || state.expired) return;
     const result = await request(`/api/mixin/${sessionId}/transcribe`, {
-      method: 'POST', body: { pcm: recording.pcm, generation, phase, round, preview },
+      method: 'POST', body: { pcm: recording.pcm, generation, phase, round },
     });
-    if (!currentTurn() || (preview && ending)) return;
-    showDraft(result.text, { text: result.text, durationMs: result.durationMs }, !preview);
-    if (preview) hasPreview = true;
-    toast(preview ? '已更新识别预览，可以继续说。' : '识别完成，可以修改文字后点确认。');
+    if (!currentTurn()) return;
+    showDraft(result.text, { text: result.text, durationMs: result.durationMs }, true);
+    toast('识别完成，可以修改文字后点确认。');
   });
-  toast('请允许麦克风；按住说话，识别结果会陆续显示。');
+  toast('请允许麦克风；按住说话，松开后识别。');
   render();
   startHoldToTalk({
-    onStart() { toast('正在录音，文字会陆续显示；松开后校正（最多 30 秒）。'); },
-    onProgress(recording) {
-      if (ending) return;
-      // 一个请求在途，只保留最新的完整录音，避免慢网络下积压旧预览。
-      pendingPreview = recording;
-      if (previewWork) return;
-      previewWork = (async () => {
-        while (pendingPreview && !ending) {
-          const snapshot = pendingPreview;
-          pendingPreview = null;
-          try { await recognize(snapshot, true); }
-          catch {
-            if (!ending && currentTurn()) toast('这段预览暂未识别，继续说话，松开后会重试。');
-          }
-        }
-      })().finally(() => { previewWork = null; });
-    },
+    onStart() { toast('正在录音，松开后识别（最多 30 秒）。'); },
     onError(error) { toast(error.message); finishVoiceInput(); },
     async onStop(recording) {
-      ending = true;
-      pendingPreview = null;
       state.holding = false;
       render();
       try {
-        toast(recording ? '正在校正完整语音，请稍候…' : '正在取消录音…');
-        if (previewWork) await previewWork;
+        toast(recording ? '正在识别语音，请稍候…' : '正在取消录音…');
         if (!currentTurn() || state.exiting || state.expired) return;
         if (!recording) {
           if (currentTurn()) showDraft(originalDraft, originalVoiceDraft);
@@ -546,11 +522,11 @@ function beginHold() {
           return;
         }
         if (recording.durationMs < 200) { toast('录音太短，请按住麦克风说完再松开。'); return; }
-        await recognize(recording, false);
+        await recognize(recording);
       } catch (error) {
         if (currentTurn() && !state.exiting) {
           if (sessionUnavailable(error)) fail(error);
-          else toast(hasPreview ? '完整语音校正失败，已保留上次预览；末尾可能缺失，请补充或重录。' : error.message || '语音识别失败，请重试或打字。');
+          else toast(error.message || '语音识别失败，请重试或打字。');
         }
       } finally {
         if (currentTurn() && !state.exiting) finishVoiceInput();

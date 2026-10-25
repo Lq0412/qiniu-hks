@@ -168,77 +168,50 @@ test('识别失败保留草稿并恢复计时，文字局不触发录音', async
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-test('按住期间实时显示预览，慢请求合并到最新快照，松开后完整结果校正且不重复追加', async () => {
+test('录音期间不发识别请求，松开仅识别一次完整音频', async () => {
   const game = { phase: 'round_player', mode: 'live', generation: 1, round: 1, seats: [], dialogue: [] };
   const page = await pageHarness(game);
   page.state.game = game;
   const requests = [];
-  page.context.fetch = (path, options) => new Promise(resolve => requests.push({
-    body: JSON.parse(options.body),
-    complete: text => resolve({ ok: true, json: async () => ({ text, durationMs: 2000 }) }),
-  }));
+  page.context.fetch = async (path, options) => {
+    requests.push(JSON.parse(options.body));
+    return { ok: true, json: async () => ({ text: '完整回答', durationMs: 4500 }) };
+  };
   page.beginHold();
-  const preview = pcm => page.context.recordHandlers.onProgress({ pcm, durationMs: 2000 });
-  preview('two-seconds');
   await flush();
-  preview('four-seconds');
-  preview('six-seconds');
+  assert.equal(requests.length, 0);
+  assert.equal(page.context.recordHandlers.onProgress, undefined);
+  await page.context.recordHandlers.onStop({ pcm: 'complete-audio', durationMs: 4500 });
   assert.equal(requests.length, 1);
-  requests[0].complete('作为一个爱');
-  await flush();
-  assert.equal(page.input.value, '作为一个爱');
-  assert.equal(page.state.holding, true);
-  assert.equal(page.state.inputBusy, true);
-  assert.equal(requests.length, 2);
-  assert.equal(requests[1].body.pcm, 'six-seconds');
-  assert.equal(requests[1].body.preview, true);
-  const stopped = page.context.recordHandlers.onStop({ pcm: 'full-recording', durationMs: 8000 });
-  requests[1].complete('迟到的旧预览');
-  await flush();
-  assert.equal(page.input.value, '作为一个爱');
-  assert.equal(requests.length, 3);
-  assert.equal(requests[2].body.preview, false);
-  assert.equal(requests[2].body.pcm, 'full-recording');
-  requests[2].complete('作为一个 AI，我先分析。');
-  await stopped;
-  assert.equal(page.input.value, '作为一个 AI，我先分析。');
+  assert.equal(requests[0].pcm, 'complete-audio');
+  assert.equal(page.input.value, '完整回答');
   assert.equal(page.state.inputBusy, false);
 });
 
-test('取消录音恢复原草稿，已经在途的预览不能覆盖它', async () => {
+test('取消录音保留原草稿，不请求识别', async () => {
   const game = { phase: 'round_player', mode: 'live', generation: 1, round: 1, seats: [], dialogue: [] };
   const page = await pageHarness(game);
   page.state.game = game;
   page.state.draft = '原来的草稿';
-  let complete;
-  page.context.fetch = () => new Promise(resolve => { complete = text => resolve({ ok: true, json: async () => ({ text, durationMs: 2000 }) }); });
+  let requests = 0;
+  page.context.fetch = async () => { requests++; throw new Error('不应识别'); };
   page.beginHold();
-  page.context.recordHandlers.onProgress({ pcm: 'preview', durationMs: 2000 });
-  await flush();
-  const stopped = page.context.recordHandlers.onStop(null);
-  complete('取消后迟到');
-  await stopped;
+  await page.context.recordHandlers.onStop(null);
+  assert.equal(requests, 0);
   assert.equal(page.input.value, '原来的草稿');
   assert.equal(page.state.inputBusy, false);
 });
 
-test('预览失败不停止录音，最终校正失败保留可见预览并明确说明可能缺少末尾', async () => {
+test('完整识别失败显示具体原因并保留已有文字', async () => {
   const game = { phase: 'round_player', mode: 'live', generation: 1, round: 1, seats: [], dialogue: [] };
   const page = await pageHarness(game);
   page.state.game = game;
-  page.context.fetch = async () => { throw new Error('预览超时'); };
+  page.state.draft = '原来的回答';
+  page.context.fetch = async () => { throw new Error('语音识别超时，请重试。'); };
   page.beginHold();
-  page.context.recordHandlers.onProgress({ pcm: 'preview', durationMs: 2000 });
-  await flush();
-  assert.equal(page.state.holding, true);
-  page.context.fetch = async () => ({ ok: true, json: async () => ({ text: '已经识别的开头', durationMs: 4000 }) });
-  page.context.recordHandlers.onProgress({ pcm: 'next', durationMs: 4000 });
-  await flush();
-  assert.equal(page.input.value, '已经识别的开头');
-  page.context.fetch = async () => { throw new Error('识别超时'); };
   await page.context.recordHandlers.onStop({ pcm: 'final', durationMs: 4500 });
-  assert.equal(page.input.value, '已经识别的开头');
-  assert.match(page.context.messages.at(-1), /末尾可能缺失/);
+  assert.equal(page.state.draft, '原来的回答');
+  assert.equal(page.context.messages.at(-1), '语音识别超时，请重试。');
   assert.equal(page.state.inputBusy, false);
 });
 

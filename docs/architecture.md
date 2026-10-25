@@ -269,13 +269,13 @@ HTTP 建局只接受 `demo`、`difficulty`、`seed`、`sceneId`、`cardIds`、`r
 
 语音模式下，`startHoldToTalk` 复用 `VoiceAudio` 与 `/recorder.js`，采集 16kHz、单声道、16bit little-endian PCM。松开即关闭麦克风，录音上限 30 秒；等待授权时松开、指针取消或窗口失焦会取消录音，迟到的授权也会释放设备。文字模式不请求麦克风。
 
-`POST /api/mixin/:id/transcribe` 接收 `{pcm, generation, phase, round, preview?}`，pcm 为 base64，preview 默认 false。沿用本机会话 cookie 与 Origin 校验，仅该路由允许约 1.28MB 请求体。服务端校验录音 0.2–30 秒与当前回合，只允许 round_player、defense、accuse；识别期间拒绝其他推进请求。录音不落盘、不写日志。
+`POST /api/mixin/:id/transcribe` 接收 `{pcm, generation, phase, round}`，pcm 为 base64。沿用本机会话 cookie 与 Origin 校验，仅该路由允许约 1.28MB 请求体。服务端校验录音 0.2–30 秒与当前回合，只允许 round_player、defense、accuse；识别期间拒绝其他推进请求。录音不落盘、不写日志。
 
-`createVoiceSession.transcribe` 取消当前预取，将录音交给同一条 `createMixinLink`。ASR 在取消轮的排空完成后发送 `listen.start`、640 字节 PCM 帧和 `listen.stop`；收到 STT 后返回文字，并 abort、排空平台自动回复，防止它串进角色配音。完整识别上限 15 秒、预览上限 5 秒（均含排队），空结果、超时或断线明确失败；完整识别结束后恢复角色预取，预览之间不启动配音。不会新建第二条设备连接。
+`createVoiceSession.transcribe` 取消当前预取，将录音交给同一条 `createMixinLink`。ASR 在取消轮的排空完成后发送 `listen.start`、640 字节 PCM 帧和 `listen.stop`；收到 STT 后返回文字，并 abort、排空平台自动回复，防止它串进角色配音。完整识别上限 15 秒（含排队），空结果、超时或断线明确失败；完整识别结束后恢复角色预取。不会新建第二条设备连接。
 
-灵矽公开协议只定义 `stt.text`，未定义逐字增量或 final 标记，因此录音预览复用已验证的整段识别：每采集两秒 PCM，产生从开头到当前的完整快照。前端一次只发送一个请求，在途期间用最新快照替换待发送项，不积压旧候选。每次返回用整段文字替换输入框，支持纠正前文、不拼接重复字。松开后丢弃未发送预览、忽略迟到预览，再识别完整录音。取消录音恢复原草稿；最终校正失败保留已有预览并提示末尾可能缺失。预览失败不会停止录音。更新速度由平台返回决定，非逐字流式字幕。协议来源：https://linx.qiniu.com/docs/xrobot/platform/websocket 。
+浏览器录音期间只采集 PCM，不生成或发送分段识别快照；松开后将完整录音提交一次识别，不再等待预览请求。取消录音保留原草稿；识别失败显示具体错误并保留原草稿。
 
-浏览器录音及识别期间暂停 step/tick 与可视倒计时、禁用提交控件。成功只填输入框，玩家可修改后确认；保持原识别文字时提交 `typed:false` 和录音时长，修改后按打字提交。失败保留原草稿并恢复计时，不使用默认答案。互盘识别也只填草稿，由玩家点「打断」提交。离线测试覆盖音频采集、授权拒绝/迟到、回合校验、同连接隔离、超时恢复及确认前不提交。基础录音识别已有用户本机试玩记录；新增预览、最终校正及异常恢复仍需逐项真机验收，离线测试不代表 ASR 效果或听感验收。
+浏览器录音及识别期间暂停 step/tick 与可视倒计时、禁用提交控件。成功只填输入框，玩家可修改后确认；保持原识别文字时提交 `typed:false` 和录音时长，修改后按打字提交。失败保留原草稿并恢复计时，不使用默认答案。互盘识别也只填草稿，由玩家点「打断」提交。离线测试覆盖音频采集、授权拒绝/迟到、回合校验、同连接隔离、超时恢复及确认前不提交。基础录音识别已有用户本机试玩记录；移除预览后的整段识别及异常恢复仍需逐项真机验收，离线测试不代表 ASR 效果或听感验收。
 
 ### 暂停、退出与失效恢复
 
@@ -293,7 +293,7 @@ HTTP 建局只接受 `demo`、`difficulty`、`seed`、`sceneId`、`cardIds`、`r
 - 地址带 `reveal=1`，或是 `webaudio:reveal`：先用 WebAudio 合成约 0.36 秒、880Hz 加 1320Hz 的短音，再播后面的 WAV。`webaudio:` 开头的地址本身不请求网络。短音被打断时，后面的 WAV 也不再播。
 - `stop()` 只停对白，不停思考音。
 - `playThinking()` / `stopThinking()`：座位切换时的循环思考音。没有 `AudioContext` 时什么都不做。重复调用 `playThinking()` 只保留一层。
-- `startHoldToTalk` / `stopHoldToTalk`：采集和结束玩家录音，支持取消、录音预览和结束回调，具体流程见「玩家录音识别」。识别结果只填入草稿，玩家确认后才提交。
+- `startHoldToTalk` / `stopHoldToTalk`：采集和结束玩家录音，支持取消和结束回调，具体流程见「玩家录音识别」。识别结果只填入草稿，玩家确认后才提交。
 - 一句语音的地址是 `audioUrl`，与 `clip.url` 相同，形如 `/api/mixin/<局id>/clip/<片段id>`。揭晓这一句再加 `?reveal=1`。读取要带 cookie `mixin`，否则 409。预合成静态文件是 `GET /mixin/audio/<文件名>`，不需要这张 cookie。文件名只能是一层，后缀只能是 `.wav`、`.mxop`、`.json`。`.` 开头和带目录的名字不提供。
 
 ## 怎么跑
@@ -338,7 +338,7 @@ npm run play:voice
 ## 当前限制
 
 - 页面仍由客户端 `tick` / `step` 推进，没有服务端挂钟。
-- 玩家识别使用录音中的完整快照预览及松开后的整段校正，尚非逐字流式字幕；基础录音已由用户本机确认，新增预览需实测更新速度。
+- 玩家录音松开后仅识别一次完整录音；不提供录音中预览，实际等待时间与识别效果需真机验收。
 - 旧版六题页的连接仍在 `linx.mjs`，和这场对局分开。`[mcp拒绝]` 记在那条旧连接上。
 
 ## 真机验收记录与适用范围
