@@ -71,9 +71,19 @@ export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice =
     audioLane.warmupBackground();
   }
   const mixin = createMixinHub({
-    createSession: options => (audioLane
-      ? createVoiceSession({ options, lane: audioLane, audioDir: speechDir })
-      : createTextSession(options)),
+    createSession: createTextSession,
+    selectSession(session) {
+      if (!audioLane || session.game.phase !== 'lobby') return session;
+      const game = session.game;
+      const options = { ...game.options, now: session.now() };
+      // 开局才分配通道：打开页面、停留大厅都不占用语音。
+      if (audioLane.mode === 'game') {
+        const text = createTextSession(options, game);
+        text.notice = '语音通道正被其他玩家使用，本局已自动切换为纯文字模式，无需等待。';
+        return text;
+      }
+      return createVoiceSession({ options, game, lane: audioLane, audioDir: speechDir });
+    },
   });
   let active = null;
   const sidOf = req => /(?:^|;\s*)counter=([a-f0-9-]+)/.exec(req.headers.cookie ?? '')?.[1];

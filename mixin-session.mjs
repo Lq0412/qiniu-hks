@@ -4,8 +4,7 @@
 import { TIMEOUTS, MixinError, confirmPlayer, createMixinGame, fulfillCue, interruptMixin, revealHint, restartMixin, castVote, startMixin, submitPlayerText, tickMixin, viewMixin } from './mixin-game.mjs';
 import { createScriptedSpeaker, dispatchSeatSpeech } from './mixin-voice.mjs';
 
-export function createTextSession(options = {}) {
-  const game = createMixinGame(options);
+export function createTextSession(options = {}, game = createMixinGame(options)) {
   const implement = options.speak ?? createScriptedSpeaker();
   let now = options.now ?? 0;
   return {

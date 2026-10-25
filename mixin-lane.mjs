@@ -62,12 +62,14 @@ export function createAudioLane({ openLink, dir, log = () => {}, timeoutMs = 100
       return finished;
     },
     async acquireForGame() {
+      if (mode === 'game') throw new Error('语音通道已被其他对局占用。');
       if (mode === 'presynth') {
         generation += 1;
         try { link?.abort(); } catch { /* 还没连上 */ }
       }
       mode = 'game';
-      return ensure();
+      try { return await ensure(); }
+      catch (error) { this.releaseGame(); throw error; }
     },
     releaseGame() {
       if (mode !== 'game') return;

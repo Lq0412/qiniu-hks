@@ -69,9 +69,8 @@ function spokenLine(cue, live) {
   return spoken.slice(0, cap);
 }
 
-export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = DEFAULT_TIMEOUT_MS, revealTimeoutMs = timeoutMs } = {}) {
+export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = DEFAULT_TIMEOUT_MS, revealTimeoutMs = timeoutMs, game = createMixinGame(options) } = {}) {
   if (!lane) throw new Error('缺少语音通道');
-  const game = createMixinGame(options);
   const hostVoiceId = voiceOf(roleById('host')).voiceId;
   let now = Number.isInteger(options.now) ? options.now : 0;
   let link = null;

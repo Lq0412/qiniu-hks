@@ -359,3 +359,15 @@ npm run play:voice
 - 玩家投票接受 `{seat:null}` 或 `{skip:true}`，以 `playerAbstained` 区分尚未投票。AI 每票有 5% 弃权概率，使用由 seed 派生的独立 RNG；其余目标分配不变。AI 弃权不计入座位 tally，以 `abstentions` 单列；弃权达到最高（含并列）时无人被识破。玩家票仍只影响甩锅大师。
 - 揭晓后的 `game.human.breakdown` 按现有 humanity 规则列出 `{label,delta,quote,id,kind,round}`，总和等于未截断的 `human.score`。旧六题 scoring.mjs 属于不同测评，不参与此游戏。
 - 角色 id 与音色目录不变，显示名改为 Claude / GPT / DeepSeek / Cursor / Gemini，玩家默认牛小七；显式 alias 仍保留。前端硬编码名单、弃权按钮与明细展示留给前端 PR。
+
+## 多人开局与语音占用（ADR-009）
+
+决策记录：Refs #39。
+
+大厅统一创建不连接语音的文字会话。`createMixinHub` 在 `start` 时通过 `selectSession` 选择具体会话实现，复用同一个 game，保留场景、种子、代数及重开记录；会话 id 和 cookie 不变。尚在开局中的重复请求明确拒绝。
+
+通道空闲或后台预合成时选择 `createVoiceSession`；`acquireForGame` 在等待连接前同步标记占用，阻止其他对局共享连接。连接失败时归还通道，不伪装为成功。已有语音局时选择 `createTextSession`，开局响应携带 `notice` 提示，前端显示“纯文字”，禁用录音，角色走脚本字幕。
+
+文字局不排队、不操作语音连接、不在中途升级。下一次 restart/start 再选择模式。语音局结束、退出或被既有一小时会话过期清理时释放通道；只是关闭浏览器标签页并不等于立即退出，玩家应使用退出按钮释放占用。
+
+本机制适用于当前单服务进程、单设备部署；不实现跨进程设备池。离线测试使用假连接，覆盖多人同时开局、文字局不配音不识别、不干扰语音占用，以及语音局退出后新局获得语音。
