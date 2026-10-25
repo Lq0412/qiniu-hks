@@ -281,6 +281,8 @@ test('a failed reconnect still lets the demo reach the reveal', async () => {
     assert.equal(fake.sockets.length, 2);
   } finally {
     await new Promise(resolve => server.close(resolve));
+    // 后台预合成可能仍在写临时文件，等待收尾后再清理。
+    await server.audioLane.warmupBackground();
     await rm(dir, { recursive: true, force: true });
   }
 });
