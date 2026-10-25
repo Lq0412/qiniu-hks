@@ -20,7 +20,6 @@ import { VoiceAudio } from '../audio.js';
 //
 // startHoldToTalk(handlers) → Promise<void>
 //   handlers.onStart()
-//   handlers.onProgress({ pcm, durationMs })：每两秒提供当前完整录音的预览快照。
 //   handlers.onStop({ pcm, durationMs })，pcm 为 16kHz 单声道 16bit PCM 的 base64。
 //   尚未授权或主动取消时 onStop(null)。
 //   handlers.onError(error)
@@ -196,7 +195,7 @@ function recordingSnapshot(capture) {
 
 export async function startHoldToTalk(handlers = {}) {
   if (recording) return;
-  const capture = { audio: new VoiceAudio(), packets: [], bytes: 0, previewBytes: 0, started: false, handlers, timer: null };
+  const capture = { audio: new VoiceAudio(), packets: [], bytes: 0, started: false, handlers, timer: null };
   recording = capture;
   try {
     if (!globalThis.navigator?.mediaDevices?.getUserMedia) throw new Error('当前浏览器不支持录音，请使用 Chrome 或 Edge 打开本地页面。');
@@ -205,10 +204,6 @@ export async function startHoldToTalk(handlers = {}) {
       capture.packets.push(new Uint8Array(packet));
       capture.bytes += packet.byteLength;
       if (capture.bytes >= 960000) stopHoldToTalk();
-      else if (handlers.onProgress && capture.bytes - capture.previewBytes >= 64000) {
-        capture.previewBytes = capture.bytes;
-        handlers.onProgress(recordingSnapshot(capture));
-      }
     });
     if (recording !== capture) return;
     capture.started = true;

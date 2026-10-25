@@ -89,20 +89,20 @@ test('30 秒自动结束并只返回一次；取消时不提交采集内容', as
   assert.equal(results[1], null);
 });
 
-test('录音期间每两秒返回完整快照，预览不停止采集，松开保留最后不足两秒的尾音', async t => {
-  let stopped = 0, final;
+test('录音期间不产生识别快照，松开只返回一次完整录音并保留尾音', async t => {
+  let stopped = 0;
+  const results = [];
   const env = environment(t, async () => ({ getTracks: () => [{ stop() { stopped++; } }] }));
-  const previews = [];
-  await startHoldToTalk({ onProgress(snapshot) { previews.push(snapshot); }, onStop(snapshot) { final = snapshot; } });
+  await startHoldToTalk({ onStop(snapshot) { results.push(snapshot); } });
   for (let i = 0; i < 225; i++) env.nodes[0].port.onmessage({ data: new Uint8Array(640).fill(i % 256).buffer });
-  assert.deepEqual(previews.map(item => item.durationMs), [2000, 4000]);
+  assert.equal(results.length, 0);
   assert.equal(stopped, 0);
-  assert.equal(Buffer.from(previews[0].pcm, 'base64').length, 64000);
-  const second = Buffer.from(previews[1].pcm, 'base64');
-  assert.equal(second.length, 128000);
-  assert.deepEqual(second.subarray(0, 64000), Buffer.from(previews[0].pcm, 'base64'));
   stopHoldToTalk();
+  stopHoldToTalk();
+  assert.equal(results.length, 1);
   assert.equal(stopped, 1);
-  assert.equal(final.durationMs, 4500);
-  assert.equal(Buffer.from(final.pcm, 'base64').length, 144000);
+  assert.equal(results[0].durationMs, 4500);
+  const pcm = Buffer.from(results[0].pcm, 'base64');
+  assert.equal(pcm.length, 144000);
+  assert.deepEqual(pcm.subarray(-640), Buffer.alloc(640, 224));
 });

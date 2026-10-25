@@ -5,7 +5,7 @@
 //   npm run play:voice
 //
 // 打开 http://127.0.0.1:4173/mixin
-// 玩家可打字，或按住录音预览文字、松开校正，检查文字后点确认。
+// 玩家可打字，或按住录音、松开后识别一次完整语音，检查文字后点确认。
 // 没有凭据时自动退回文字版，仍然打开同一个网址。
 
 import { createApp } from '../server.mjs';
@@ -36,7 +36,7 @@ export async function startVoiceServer({
   const page = `http://127.0.0.1:${actual}/mixin`;
   if (loaded) {
     log(`语音版：${page}`);
-    log('按住麦克风录音，文字陆续显示，松开后校正；检查文字后点确认。');
+    log('按住麦克风录音，松开后识别完整语音；检查文字后点确认。');
     log('需要 LINX_DEVICE_JSON（JSON 正文或文件路径）和 LINX_API_KEY，或仓库根目录的 .linx-device.json。');
     log('也可以同时设置 LINX_WS_URL、LINX_WS_TOKEN、LINX_DEVICE_ID、LINX_CLIENT_ID 跳过 OTA。');
     log('第一次启动会在后台预合成群主台词，大约 90 秒，不挡住开局。没合成好时群主走实时合成。揭晓音效由浏览器现做。');

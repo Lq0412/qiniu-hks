@@ -252,10 +252,9 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
         try { link.abort(); } finally { lane.releaseGame(); }
       }
     },
-    async transcribe({ pcm, generation, phase, round, preview = false }) {
+    async transcribe({ pcm, generation, phase, round }) {
       if (!link || released) throw new Error('语音连接尚未就绪，请重新开局。');
       if (transcribing) throw new Error('正在识别上一段录音。');
-      if (typeof preview !== 'boolean') throw new Error('识别预览参数无效。');
       if (!['round_player', 'defense', 'accuse'].includes(game.phase) || generation !== game.generation || phase !== game.phase || round !== game.round) throw new Error('发言回合已变化，请在当前回合重新录音。');
       if (typeof pcm !== 'string' || !pcm.length || pcm.length > 1280000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(pcm)) throw new Error('录音数据无效。');
       const input = Buffer.from(pcm, 'base64');
@@ -264,13 +263,13 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
       transcribing = true;
       discardPrefetch();
       try {
-        const result = await link.transcribe(input, { timeoutMs: preview ? 5000 : 15000 });
+        const result = await link.transcribe(input, { timeoutMs: 15000 });
         if (game.generation !== generation || game.phase !== phase || game.round !== round) throw new Error('发言回合已变化，请重新录音。');
         if (!result.text || result.text.length > 500) throw new Error('识别文字为空或超过 500 字，请分短句重说。');
         return { text: result.text, durationMs: input.length / 32, view: viewMixin(game) };
       } finally {
         transcribing = false;
-        if (!preview) prefetchNext();
+        prefetchNext();
       }
     },
     async start() {
