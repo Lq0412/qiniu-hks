@@ -239,13 +239,13 @@ test('pure helpers follow the public table and hide secrets before the reveal', 
   assert.equal(lines.some(line => line.x < 0 || line.x > 1080 || line.y < 0 || line.y > 1440), false);
 });
 
-test('audio stubs stay empty and do not ask for a microphone', async () => {
+test('音频播放不自动开启麦克风，显式录音在不支持时明确报错', async () => {
   const appSource = await readFile(new URL('../public/mixin/app.js', import.meta.url), 'utf8');
   assert.match(appSource, /const cue = state\.game\?\.cue;[\s\S]*?speechPlay\(cue\)/);
   assert.equal(appSource.includes('payload.game?.cue'), false);
   const source = await readFile(new URL('../public/mixin/audio.js', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
-  assert.equal(code.includes('getUserMedia'), false);
+  assert.equal(code.includes('new VoiceAudio()'), true);
   assert.equal(typeof audio.play, 'function');
   assert.equal(typeof audio.stop, 'function');
   assert.equal(typeof audio.playThinking, 'function');
@@ -257,9 +257,10 @@ test('audio stubs stay empty and do not ask for a microphone', async () => {
   audio.playThinking();
   audio.stopThinking();
   audio.stop();
+  assert.equal(called, 0);
   await audio.startHoldToTalk({ onStart() { called += 1; }, onStop() { called += 1; }, onError() { called += 1; } });
   audio.stopHoldToTalk();
-  assert.equal(called, 0);
+  assert.equal(called, 1);
 });
 
 test('the text page plays a full game in the browser call order without leaking secrets', async () => {

@@ -77,6 +77,8 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
   let link = null;
   let prefetch = null;
   let released = false;
+  let transcribing = false;
+  let closed = false;
   const clips = new Map();
 
   async function detectRetry(request, limitMs = timeoutMs, valid = () => true, background = false) {
@@ -203,7 +205,7 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
 
   function prefetchNext() {
     const cue = game.cue;
-    if (game.phase === 'result' || !cue || prefetch?.cueId === cue.cueId) return;
+    if (closed || game.phase === 'result' || !cue || prefetch?.cueId === cue.cueId) return;
     if (prefetch) discardPrefetch();
     // fulfillCue 内的 shiftCue 已更新即兴句的 spoken 和 instruction，所有 step cue 此时均已定稿。
     const pending = { cueId: cue.cueId, cancelled: false, settled: false };
@@ -238,7 +240,41 @@ export function createVoiceSession({ options = {}, lane, audioDir, timeoutMs = D
     now: () => now,
     setNow(value) { now = value; },
     view() { return viewMixin(game); },
+    get transcribing() { return transcribing; },
+    close() {
+      if (closed) return;
+      closed = true;
+      discardPrefetch();
+      game.generation += 1;
+      game.cue = null;
+      if (link && !released) {
+        released = true;
+        try { link.abort(); } finally { lane.releaseGame(); }
+      }
+    },
+    async transcribe({ pcm, generation, phase, round, preview = false }) {
+      if (!link || released) throw new Error('语音连接尚未就绪，请重新开局。');
+      if (transcribing) throw new Error('正在识别上一段录音。');
+      if (typeof preview !== 'boolean') throw new Error('识别预览参数无效。');
+      if (!['round_player', 'defense', 'accuse'].includes(game.phase) || generation !== game.generation || phase !== game.phase || round !== game.round) throw new Error('发言回合已变化，请在当前回合重新录音。');
+      if (typeof pcm !== 'string' || !pcm.length || pcm.length > 1280000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(pcm)) throw new Error('录音数据无效。');
+      const input = Buffer.from(pcm, 'base64');
+      if (input.toString('base64') !== pcm) throw new Error('录音数据无效。');
+      if (input.length < 6400 || input.length > 960000 || input.length % 2) throw new Error('请录制 0.2 到 30 秒的语音。');
+      transcribing = true;
+      discardPrefetch();
+      try {
+        const result = await link.transcribe(input, { timeoutMs: preview ? 5000 : 15000 });
+        if (game.generation !== generation || game.phase !== phase || game.round !== round) throw new Error('发言回合已变化，请重新录音。');
+        if (!result.text || result.text.length > 500) throw new Error('识别文字为空或超过 500 字，请分短句重说。');
+        return { text: result.text, durationMs: input.length / 32, view: viewMixin(game) };
+      } finally {
+        transcribing = false;
+        if (!preview) prefetchNext();
+      }
+    },
     async start() {
+      if (closed) throw new Error('本局已退出，请重新开局。');
       if (!link || released) link = await lane.acquireForGame();
       released = false;
       // 预热总共只等 100ms，包含排队；超时只取消这条预热。

@@ -127,7 +127,8 @@ export function createApp({ loadConfig = deviceConfig, getOta = ota, openVoice =
         if (req.method !== 'GET' && req.method !== 'POST') return json(404, { error: '未找到接口。' });
         let body = '';
         if (req.method === 'POST') {
-          for await (const chunk of req) { body += chunk; if (body.length > 4096) throw new Error('请求内容过大。'); }
+          const limit = /^\/api\/mixin\/[0-9a-f-]+\/transcribe$/.test(path) ? 1284096 : 4096;
+          for await (const chunk of req) { body += chunk; if (body.length > limit) throw new Error('请求内容过大。'); }
         }
         if (path.startsWith('/api/mixin/')) {
           const id = path.split('/')[3];

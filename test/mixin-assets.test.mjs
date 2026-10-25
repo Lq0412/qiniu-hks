@@ -38,18 +38,26 @@ test('mixin assets: image MIME, missing files and raw/encoded traversal', async 
   }
   assert.equal(head.headers['content-length'], '7');
   assert.equal(head.body, '');
-  // 使用同名前缀的相邻目录，确保校验的是目录边界。
-  const outside = dir + '-outside';
-  await mkdir(outside);
-  t.after(() => rm(outside, { recursive: true }));
-  await writeFile(join(outside, 'secret.png'), 'outside');
-  await symlink(join(outside, 'secret.png'), join(dir, 'escape.png'));
-  assert.equal((await get('/mixin/assets/escape.png')).statusCode, 404);
-  await symlink(outside, join(dir, 'escape-dir'));
-  assert.equal((await get('/mixin/assets/escape-dir/secret.png')).statusCode, 404);
-  await symlink(join(dir, 'test.png'), join(dir, 'inside.png'));
-  assert.equal((await get('/mixin/assets/inside.png')).statusCode, 200);
   for (const path of ['missing.png', '../missing.png', '%2e%2e/missing.png', '%2e%2e%2fapp.js', '%2fetc/passwd', 'C:%5csecret.png', '%ZZ', '%00.png']) {
     assert.equal((await get('/mixin/assets/' + path)).statusCode, 404, path);
   }
+  await t.test('symbolic links stay inside the asset directory', async t => {
+    // 使用同名前缀的相邻目录，确保校验的是目录边界。
+    const outside = dir + '-outside';
+    await mkdir(outside);
+    t.after(() => rm(outside, { recursive: true }));
+    await writeFile(join(outside, 'secret.png'), 'outside');
+    try {
+      await symlink(join(outside, 'secret.png'), join(dir, 'escape.png'));
+    } catch (error) {
+      if (process.platform !== 'win32' || error.code !== 'EPERM') throw error;
+      t.skip('Windows 当前用户无创建符号链接权限；Linux CI 执行此检查');
+      return;
+    }
+    assert.equal((await get('/mixin/assets/escape.png')).statusCode, 404);
+    await symlink(outside, join(dir, 'escape-dir'));
+    assert.equal((await get('/mixin/assets/escape-dir/secret.png')).statusCode, 404);
+    await symlink(join(dir, 'test.png'), join(dir, 'inside.png'));
+    assert.equal((await get('/mixin/assets/inside.png')).statusCode, 200);
+  });
 });

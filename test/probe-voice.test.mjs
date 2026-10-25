@@ -432,7 +432,7 @@ test('probe socket handshake does not leak credentials', async () => {
   }), /握手超时/);
 });
 
-test('credentials come from env or device file and results omit them', async () => {
+test('credentials come from env or device file and results omit them', async t => {
   assert.equal(credentialsFromEnv({}), null);
   await assert.rejects(loadProbeCredentials({ env: { LINX_WS_TOKEN: 'probe-secret-token' } }), error => {
     assert.equal(error.message.includes('probe-secret-token'), false);
@@ -476,7 +476,11 @@ test('credentials come from env or device file and results omit them', async () 
     const saved = await readFile(file, 'utf8');
     assert.equal(saved.includes('probe-secret-token'), false);
     assert.equal(saved.includes('probe-api-key'), false);
-    assert.equal((await stat(file)).mode & 0o077, 0);
+    await t.test('report permissions exclude group and others on POSIX', {
+      skip: process.platform === 'win32' ? 'Windows 不提供 POSIX 权限位语义；Linux CI 执行此检查' : false,
+    }, async () => {
+      assert.equal((await stat(file)).mode & 0o077, 0);
+    });
     assert.throws(() => parseArgs(['--nope']), /未知参数/);
     assert.throws(() => parseArgs(['--samples', '0']), /samples/);
     assert.equal(parseArgs(['--voices', 'a,b', '--skip', 'asrShape']).skip[0], 'asrShape');
