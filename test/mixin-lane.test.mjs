@@ -318,3 +318,21 @@ test('连接建立期间也保留占用，不能给另一局分配同一通道',
   assert.equal(await first, link);
   lane.close();
 });
+
+test('开局连接失败后释放占用，后续对局仍可获得语音通道', async () => {
+  let attempts = 0;
+  const link = controllableLink();
+  link.connect = async () => {
+    attempts++;
+    if (attempts === 1) throw new Error('模拟连接失败');
+  };
+  const lane = createAudioLane({ openLink: () => link, catalog: [], log() {} });
+  try {
+    await assert.rejects(lane.acquireForGame(), /模拟连接失败/);
+    await lane.warmupBackground();
+    assert.equal(lane.mode, 'idle');
+    assert.equal(await lane.acquireForGame(), link);
+    assert.equal(lane.mode, 'game');
+    assert.equal(attempts, 2);
+  } finally { lane.close(); }
+});
