@@ -1,5 +1,9 @@
 # 谁是人类
 
+[![Checks](https://github.com/Lq0412/qiniu-hks/actions/workflows/check.yml/badge.svg)](https://github.com/Lq0412/qiniu-hks/actions/workflows/check.yml) [![Coverage](https://codecov.io/gh/Lq0412/qiniu-hks/branch/main/graph/badge.svg)](https://codecov.io/gh/Lq0412/qiniu-hks)
+
+**质量口径**：CI 每次 push/PR 运行语法检查、188 项 Node 测试、服务端行覆盖率门禁 ≥80%，并上传 LCOV 与测试日志；`game.mjs`、`mixin-game.mjs`、`humanity.mjs` 另设分支覆盖率门禁 ≥90%。覆盖率统计服务端 `.mjs`，不等同于浏览器真实体验；前端交互使用 mock/无头文字验收，麦克风、ASR 听感和真实灵矽连接仍需真机验收。点击 Checks 可查看最新结果和可下载报告。
+
 **一桌 AI，只有你是人。** 运行在[七牛灵矽 Linx](https://linx.qiniu.com/)上的网页版语音派对游戏：你坐在 5 号，模仿模型说话，争取不被四位 AI 玩家投票识破。
 
 真机亮点：预合成满、按浏览器节奏驱动的一局约 4.4 分钟（262s），大部分台词即点即播（等待 p50 4–5ms）；预合成进行中开局约 0.1 秒（106ms）。五位 AI 角色各有专属音色，每局四位上桌，群主另有一个音色。
